@@ -134,7 +134,7 @@ static int global_counter = 1;
 TEST(FlakyReporting, FlakyReplay) {
     global_counter = 1;
     try {
-        hegel::hegel(
+        hegel::test(
             [&](hegel::TestCase& tc) {
                 auto x = tc.draw(gs::integers<int>());
                 if (global_counter == 1) {
@@ -143,8 +143,7 @@ TEST(FlakyReporting, FlakyReplay) {
                 }
             },
             {.test_cases = 1,
-             .suppress_health_check = {
-                 hegel::settings::HealthCheck::LargeInitialTestCase}});
+             .suppress_health_check = {HealthCheck::LargeInitialTestCase}});
         FAIL() << "Expected std::runtime_error";
     } catch (const std::runtime_error& e) {
         EXPECT_NE(
@@ -157,15 +156,14 @@ TEST(FlakyReporting, FlakyReplay) {
 TEST(FlakyReporting, FlakyGeneration) {
     global_counter = 0;
     try {
-        hegel::hegel(
+        hegel::test(
             [&](hegel::TestCase& tc) {
                 tc.draw(gs::integers<int>({.min_value = global_counter,
                                            .max_value = global_counter + 1}));
                 global_counter++;
             },
             {.test_cases = 10,
-             .suppress_health_check = {
-                 hegel::settings::HealthCheck::LargeInitialTestCase}});
+             .suppress_health_check = {HealthCheck::LargeInitialTestCase}});
         FAIL() << "Expected std::runtime_error";
     } catch (const std::runtime_error& e) {
         EXPECT_NE(std::string(e.what()).find(
