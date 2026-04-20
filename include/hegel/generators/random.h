@@ -1,13 +1,5 @@
 #pragma once
 
-/**
- * @file random.h
- * @brief Random engine integration with the C++ `<random>` library
- *
- * Provides HegelRandom, a class satisfying UniformRandomBitGenerator,
- * so it can be used with any std::random distribution.
- */
-
 #include <cstdint>
 #include <optional>
 #include <random>
@@ -17,12 +9,8 @@
 
 namespace hegel::generators {
 
-    // =============================================================================
-    // Parameter structs
-    // =============================================================================
-
     /**
-     * @brief Parameters for randoms() strategy.
+     * @brief Parameters for randoms() generator.
      */
     struct RandomsParams {
         bool use_true_random =
@@ -32,10 +20,6 @@ namespace hegel::generators {
                    ///< too expensive. Values produced in true-random mode
                    ///< cannot be shrunk.
     };
-
-    // =============================================================================
-    // HegelRandom class
-    // =============================================================================
 
     /**
      * @brief A random engine that integrates with Hypothesis via Hegel.
@@ -96,7 +80,7 @@ namespace hegel::generators {
         std::optional<std::mt19937> engine_;
     };
 
-    /// @name Random Strategies
+    /// @name Random
     /// @{
 
     /**
