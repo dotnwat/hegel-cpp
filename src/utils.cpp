@@ -9,9 +9,11 @@
 #include <optional>
 #include <spawn.h>
 #include <stdexcept>
+#include <stdlib.h> // IWYU pragma: keep
 #include <string>
 #include <string_view>
 #include <sys/stat.h>
+#include <sys/types.h> // IWYU pragma: keep
 #include <sys/wait.h>
 #include <system_error>
 #include <unistd.h>
@@ -20,8 +22,6 @@
 
 #if defined(__APPLE__)
 #include <crt_externs.h>
-#else
-extern char** environ;
 #endif
 
 namespace fs = std::filesystem;
