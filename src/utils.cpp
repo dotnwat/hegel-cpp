@@ -20,6 +20,8 @@
 
 #if defined(__APPLE__)
 #include <crt_externs.h>
+#else
+extern char** environ;
 #endif
 
 namespace fs = std::filesystem;
@@ -32,8 +34,7 @@ namespace {
 #if defined(__APPLE__)
         return *::_NSGetEnviron();
 #else
-        extern char** environ;
-        return environ;
+        return ::environ;
 #endif
     }
 

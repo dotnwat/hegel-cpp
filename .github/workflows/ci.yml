@@ -25,7 +25,7 @@ jobs:
 
       - uses: ./.github/actions/install-tools
         with:
-          tools: just
+          tools: just uv
 
       - name: Install clang-tidy
         run: sudo apt-get update && sudo apt-get install -y clang-tidy-18
