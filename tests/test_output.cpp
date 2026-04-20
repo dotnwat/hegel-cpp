@@ -130,7 +130,7 @@ constexpr const char* EXCEPTION_MESSAGE_TEST_CODE = R"cpp(
 namespace gs = hegel::generators;
 
 int main() {
-    hegel::hegel(
+    hegel::test(
         [](hegel::TestCase& tc) {
             int32_t x = tc.draw(gs::integers<int32_t>());
             if (x >= 7) {
@@ -138,7 +138,7 @@ int main() {
                                          std::to_string(x));
             }
         },
-        {.database = hegel::settings::Database::disabled()});
+        {.database = hegel::Database::disabled()});
     return 0;
 }
 )cpp";
