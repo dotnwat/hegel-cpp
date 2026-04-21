@@ -97,9 +97,10 @@ namespace hegel::generators {
      * of values for correctness.
      *
      * @note Some C++ distributions in std do not interact well with Hegel
-     * controlling their randomness due to their rejection sampling implementation,
-     * and may behave unpredictably. We recommend using true random on RNG instances
-     * that you expect to be passed to std distributions.
+     * controlling their randomness due to their rejection sampling
+     * implementation, and may behave unpredictably. We recommend using true
+     * random on RNG instances that you expect to be passed to std
+     * distributions.
      *
      * @code{.cpp}
      * namespace gs = hegel::generators;
