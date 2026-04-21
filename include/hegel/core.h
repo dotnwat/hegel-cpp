@@ -184,6 +184,10 @@ namespace hegel::generators {
          * Hegel rejects the test case. You should prefer generating values that
          * naturally satisfy your constraints rather than filtering broadly.
          *
+         * For example, if you want sorted lists of length N, you should
+         * generate lists of length N and sort them, not generate random lists
+         * and filter by a predicate of 'length == N && is_sorted'.
+         *
          * @code{.cpp}
          * auto even = integers<int>({.min_value = 0, .max_value = 100})
          *     .filter([](int x) { return x % 2 == 0; });
@@ -307,6 +311,14 @@ namespace hegel::generators {
 
     // Create a generator from an explicit CBOR schema describing the generation
     // constraints. See: https://hegel.dev/reference/protocol#schemas
+
+    // Example:
+    // auto gen = hegel::generators::from_schema<int>(
+    //     hegel::internal::json::json{{"type", "integer"},
+    //                    {"min_value", 0},
+    //                    {"max_value", 100}}
+    // );
+    // int value = tc.draw(gen);
     template <typename T>
     Generator<T> from_schema(hegel::internal::json::json schema) {
         return Generator<T>(new SchemaBackedGenerator<T>(std::move(schema)));
