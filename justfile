@@ -30,6 +30,29 @@ docs:
     cmake --build build --target docs
     open build/docs/html/index.html
 
+# MODE is one of: subdirectory, fetchcontent, install, tests_on.
+check-consumer MODE="subdirectory":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    ROOT=$(pwd)
+    BUILD_DIR="$ROOT/build/consumer-{{ MODE }}"
+    if [ "{{ MODE }}" = "install" ]; then
+        cmake -B build/consumer-hegel-install \
+            -DHEGEL_BUILD_TESTS=OFF -DHEGEL_BUILD_CONFORMANCE=OFF
+        cmake --build build/consumer-hegel-install -j{{ jobs }}
+        cmake --install build/consumer-hegel-install \
+            --prefix "$ROOT/build/consumer-hegel-prefix"
+        PREFIX_ARG=-DCMAKE_PREFIX_PATH="$ROOT/build/consumer-hegel-prefix"
+    else
+        PREFIX_ARG=""
+    fi
+    cmake -B "$BUILD_DIR" -S "tests/consumer/{{ MODE }}" \
+        -DHEGEL_ROOT="$ROOT" -DHEGEL_REF=HEAD $PREFIX_ARG
+    cmake --build "$BUILD_DIR" -j{{ jobs }}
+    "$BUILD_DIR/consumer"
+
+consumer MODE="subdirectory": (check-consumer MODE)
+
 check-conformance: build
     uv run --with hegel-core \
         --with pytest --with hypothesis \
