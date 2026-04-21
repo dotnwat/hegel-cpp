@@ -96,11 +96,10 @@ namespace hegel::generators {
      * flag should only be set to true when your code relies on the distribution
      * of values for correctness.
      *
-     * @note C++ distributions implemented using rejection sampling, such as
-     * std::normal_distribution, std::lognormal_distribution, and
-     * std::poisson_distribution for mean >= 10, and
-     * std::gamma_distribution, must use true random mode.
-     *
+     * @note Some C++ distributions in std do not interact well with Hegel
+     * controlling their randomness due to their rejection sampling implementation,
+     * and may behave unpredictably. We recommend using true random on RNG instances
+     * that you expect to be passed to std distributions.
      *
      * @code{.cpp}
      * namespace gs = hegel::generators;

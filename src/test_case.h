@@ -1,8 +1,6 @@
 #pragma once
 
 /**
- * @file test_case.h
- * @brief Internal test state
  * @cond INTERNAL
  */
 
