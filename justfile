@@ -53,6 +53,31 @@ check-consumer MODE="subdirectory":
 
 consumer MODE="subdirectory": (check-consumer MODE)
 
+# Run every consumer mode in parallel, re-printing failure output for clarity
+check-consumer-all:
+    #!/usr/bin/env bash
+    set -uo pipefail
+    modes=(subdirectory fetchcontent install tests_on)
+    mkdir -p build/consumer-logs
+    pids=()
+    for mode in "${modes[@]}"; do
+        just check-consumer "$mode" >"build/consumer-logs/$mode.log" 2>&1 &
+        pids+=($!)
+    done
+    rc=0
+    for i in "${!pids[@]}"; do
+        mode="${modes[$i]}"
+        if wait "${pids[$i]}"; then
+            echo "consumer ($mode): passed"
+        else
+            rc=1
+            echo "::group::consumer ($mode) FAILED"
+            cat "build/consumer-logs/$mode.log"
+            echo "::endgroup::"
+        fi
+    done
+    exit $rc
+
 check-conformance: build
     uv run --with hegel-core \
         --with pytest --with hypothesis \

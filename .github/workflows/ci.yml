@@ -114,15 +114,10 @@ jobs:
         run: just check-tests
 
   consumer:
-    name: consumer (${{ matrix.mode }})
+    name: consumer
     runs-on: ubuntu-latest
     permissions:
       contents: read
-
-    strategy:
-      fail-fast: false
-      matrix:
-        mode: [subdirectory, fetchcontent, install, tests_on]
 
     steps:
       - name: Checkout
@@ -142,8 +137,8 @@ jobs:
       - name: Install hegel
         run: pip install hegel-core
 
-      - name: Run consumer test
-        run: just check-consumer ${{ matrix.mode }}
+      - name: Run consumer tests
+        run: just check-consumer-all
 
   conformance:
     name: conformance
