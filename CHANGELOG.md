@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.3.3 - 2026-04-20
+
+Update and build our documentation to https://hegel.dev/.
+
+## 0.3.2 - 2026-04-20
+
+Update how we install uv and hegel-core to match https://hegel.dev/reference/installation.
+
+## 0.3.1 - 2026-04-20
+
+Support displaying user defined exceptions, health check failures, and flaky failures.
+
 ## 0.3.0 - 2026-04-20
 
 Multiple improvements to make hegel-cpp more idiomatic to use.

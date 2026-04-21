@@ -7,6 +7,7 @@
 #include <hegel/json.h>
 #include <hegel/settings.h>
 
+#include "installer.h"
 #include "json_impl.h"
 
 #include <connection.h>
@@ -18,41 +19,32 @@
 #include <cerrno>
 #include <cstdint>
 #include <cstdio>
-#include <cstdlib>
 #include <cstring>
 #include <cxxabi.h>
 #include <exception>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <sys/wait.h>
 #include <unistd.h>
 
-// Default path to hegel binary (can be overridden by CMake)
-#ifndef HEGEL_DEFAULT_PATH
-#define HEGEL_DEFAULT_PATH "hegel"
-#endif
-
 using hegel::internal::json::ImplUtil;
 
 namespace hegel {
 
-    // =============================================================================
-    // Child Process
-    // =============================================================================
     static void hegel_child(int child_read_fd, int child_write_fd,
-                            const Settings& settings) {
+                            const Settings& settings,
+                            std::vector<std::string> args) {
         // Wire pipes to stdin/stdout for --stdio mode
         dup2(child_read_fd, STDIN_FILENO);
         dup2(child_write_fd, STDOUT_FILENO);
         ::close(child_read_fd);
         ::close(child_write_fd);
 
-        std::string hegel_path = HEGEL_DEFAULT_PATH;
-
-        std::vector<std::string> args = {
-            hegel_path, "--stdio", "--verbosity",
-            verbosity_to_string(settings.verbosity)};
+        args.emplace_back("--stdio");
+        args.emplace_back("--verbosity");
+        args.emplace_back(verbosity_to_string(settings.verbosity));
 
         std::vector<char*> argv;
         argv.reserve(args.size() + 1);
@@ -63,8 +55,8 @@ namespace hegel {
 
         execvp(argv[0], argv.data());
         // execvp only returns on failure
-        fprintf(stderr, "Failed to run Hegel server at path %s: %s\n",
-                hegel_path.c_str(), strerror(errno));
+        fprintf(stderr, "Failed to run Hegel server at path %s: %s\n", argv[0],
+                strerror(errno));
         _exit(1);
     }
 
@@ -111,9 +103,10 @@ namespace hegel {
         conn.request(0, run_test_msg);
 
         // Event loop on test stream
-        bool test_passed = true;
-        int final_replays_remaining = 0;
+        hegel::internal::json::json results_json(nullptr);
+        uint32_t final_replays_remaining = 0;
         bool done = false;
+        std::string final_exception_message;
         while (!done) {
             auto event = conn.recv_request(test_stream);
             auto& payload = event.payload;
@@ -141,6 +134,7 @@ namespace hegel {
                 // Run test
                 std::string status = "VALID";
                 std::string origin;
+                std::string exception_message;
                 bool stopped = false;
                 try {
                     test_fn(tc);
@@ -151,6 +145,7 @@ namespace hegel {
                 } catch (const std::exception& e) {
                     status = "INTERESTING";
                     origin = typeid(e).name();
+                    exception_message = e.what();
                 } catch (...) {
                     status = "INTERESTING";
                     if (const std::type_info* tinfo =
@@ -180,6 +175,9 @@ namespace hegel {
                     if (final_replays_remaining <= 0) {
                         done = true;
                     }
+                    if (status == "INTERESTING" && done) {
+                        final_exception_message = ": " + exception_message;
+                    }
                 }
 
             } else if (event_type == "test_done") {
@@ -188,10 +186,9 @@ namespace hegel {
                                  hegel::internal::json::json{{"result", true}});
 
                 if (payload.contains("results")) {
-                    auto& results = ImplUtil::raw(payload["results"]);
-                    test_passed = results.value("passed", true);
+                    results_json = payload["results"];
                     final_replays_remaining =
-                        results.value("interesting_test_cases", 0);
+                        results_json.value("interesting_test_cases", 0);
                 }
 
                 if (final_replays_remaining <= 0) {
@@ -206,13 +203,35 @@ namespace hegel {
         int status;
         waitpid(child_pid, &status, 0);
 
+        auto& results = ImplUtil::raw(results_json);
+        if (results.is_null()) {
+            throw std::runtime_error("test_done received without results");
+        }
+        if (results.contains("health_check_failure")) {
+            throw std::runtime_error(
+                "Hegel health check failure:\n" +
+                results["health_check_failure"].get<std::string>());
+        }
+        if (results.contains("flaky")) {
+            throw std::runtime_error("Flaky Hegel test:\n" +
+                                     results["flaky"].get<std::string>());
+        }
+
+        bool test_passed = results.value("passed", true);
+
         if (!test_passed) {
-            throw std::runtime_error("Hegel test failed");
+            throw std::runtime_error("\nHegel test failed" +
+                                     final_exception_message);
         }
     }
 
     void test(const std::function<void(TestCase&)>& test_fn,
               const Settings& settings) {
+        // Resolve the command (including uv bootstrap, if needed) before
+        // fork so any install cost is paid once in the parent, where
+        // failures surface cleanly.
+        std::vector<std::string> command = impl::hegel_command();
+
         // Create pipes for parent<->child stdio communication
         // parent_to_child: parent writes to [1], child reads from [0]
         // child_to_parent: child writes to [1], parent reads from [0]
@@ -231,7 +250,8 @@ namespace hegel {
             // Child: close unused pipe ends
             ::close(parent_to_child[1]);
             ::close(child_to_parent[0]);
-            hegel_child(parent_to_child[0], child_to_parent[1], settings);
+            hegel_child(parent_to_child[0], child_to_parent[1], settings,
+                        std::move(command));
         } else {
             // Parent: close unused pipe ends
             ::close(parent_to_child[0]);
