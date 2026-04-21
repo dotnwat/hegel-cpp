@@ -1,4 +1,5 @@
 #pragma once
+
 /**
  * @mainpage Hegel
  *
