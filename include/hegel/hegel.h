@@ -1,5 +1,4 @@
 #pragma once
-
 /**
  * @mainpage Hegel
  *
@@ -244,9 +243,9 @@ namespace hegel {
      * int main() {
      *     hegel::test([](hegel::TestCase& tc) {
      *         namespace gs = hegel::generators;
-     *         auto x = tc.draw(gs::integers<int>({.min_value = 0,
-     * .max_value = 100})); auto y = tc.draw(gs::integers<int>({.min_value =
-     * 0, .max_value = 100}));
+     *         auto x = tc.draw(gs::integers<int>({.min_value = 0, .max_value =
+     * 100})); auto y = tc.draw(gs::integers<int>({.min_value = 0, .max_value =
+     * 100}));
      *
      *         // Property: x + y >= x (true for non-negative integers)
      *         if (x + y < x) {
