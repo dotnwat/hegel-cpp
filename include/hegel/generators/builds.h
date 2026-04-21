@@ -51,6 +51,7 @@ namespace hegel::generators {
         static constexpr auto member_ptr = MemberPtr; ///< The member pointer
         Gen generator; ///< Generator for the field value
     };
+
     /**
      * @brief Create a field specification for builds_agg().
      *
@@ -91,6 +92,7 @@ namespace hegel::generators {
      *      integers<int>({.min_value = 1, .max_value = 100}))
      * );
      * @endcode
+     *
      * @tparam T Aggregate type to construct
      * @tparam Fields Field specification types
      * @param fields Field specifications from field()

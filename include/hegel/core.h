@@ -183,10 +183,8 @@ namespace hegel::generators {
          * This works by generating values from the Generator&lt;T&gt; and
          * applying a transformation to each value.
          *
-         * This is used when you have a function to convert *values* between
-         * types. Compare with flat_map().
+         * Here's an example of how you'd use this:
          *
-         * Here's an example of how you'd use this with built-in strategies:
          * @code{.cpp}
          * auto halved = integers<int>().map(
          *     [](int x) { return double(x) / 2.0; }

@@ -96,8 +96,8 @@ namespace hegel::generators {
      * flag should only be set to true when your code relies on the distribution
      * of values for correctness.
      *
-     * @note Many distributions from <random> do not interact well
-     * with Hegel controlling the randomness, and will behave in unpredictable
+     * @note Some distributions from <random> do not interact well
+     * with Hegel controlling their randomness, and will behave in unpredictable
      * ways, such as causing the program to hang. We recommend using true
      * randoms on RNG instances that you expect to be passed to distributions
      * from <random>.
