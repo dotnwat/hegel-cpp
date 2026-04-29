@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.7 - 2026-04-29
+
+Internal refactor of `one_of`.
+
 ## 0.3.6 - 2026-04-28
 
 Bump our pinned [`hegel-core`](https://github.com/hegeldev/hegel-core) version from `0.4.0` to [`0.4.14`](https://github.com/hegeldev/hegel-core/releases/tag/v0.4.14).
