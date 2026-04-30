@@ -300,7 +300,8 @@ namespace hegel::generators {
 
             hegel::internal::json::json generators =
                 hegel::internal::json::json::array();
-            generators.push_back(hegel::internal::json::json{{"type", "null"}});
+            generators.push_back(hegel::internal::json::json{
+                {"type", "constant"}, {"value", nullptr}});
             generators.push_back(basic->schema);
             hegel::internal::json::json schema = {{"type", "one_of"},
                                                   {"generators", generators}};

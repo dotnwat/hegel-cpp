@@ -227,7 +227,7 @@ namespace hegel::generators {
             std::optional<BasicGenerator<std::string>>
             as_basic() const override {
                 return BasicGenerator<std::string>{
-                    {{"type", version_ == 4 ? "ipv4" : "ipv6"}},
+                    {{"type", "ip_addresses"}, {"version", version_}},
                     &default_parse_raw<std::string>};
             }
 
