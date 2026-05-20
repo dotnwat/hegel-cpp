@@ -31,7 +31,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y clang-tidy-18
 
       - name: Install zizmor
-        run: pip install zizmor
+        run: pip install zizmor==1.23.1
       - name: Run zizmor
         run: zizmor --format plain .github/
 
