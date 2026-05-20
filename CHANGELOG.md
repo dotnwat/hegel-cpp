@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.9 - 2026-05-20
+
+This patch bumps our pinned hegel-core from [0.6.0](https://github.com/hegeldev/hegel-core/releases/tag/v0.6.0) to [0.9.1](https://github.com/hegeldev/hegel-core/releases/tag/v0.9.1).
+
 ## 0.3.8 - 2026-04-30
 
 Internal refactor.
