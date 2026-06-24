@@ -6,6 +6,7 @@
 
 #include "json_impl.h"
 
+#include <hegel.h>
 #include <protocol.h>
 #include <test_case.h>
 
@@ -14,6 +15,7 @@
 #include <iostream>
 #include <stdexcept>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace hegel::impl {
