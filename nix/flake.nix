@@ -154,11 +154,7 @@
           doCheck = true;
           checkPhase = ''
             runHook preCheck
-            # ShrinkCollections.DuplicateContainment is a find/shrink-quality
-            # threshold the engine reaches only under particular seeds;
-            # excluded here pending recalibration.
-            ctest --output-on-failure --verbose \
-              -E '^ShrinkCollections\.DuplicateContainment$'
+            ctest --output-on-failure --verbose 
             runHook postCheck
           '';
         };

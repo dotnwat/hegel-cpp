@@ -150,7 +150,7 @@ namespace hegel::tests::common {
                     }
                 },
                 hegel::Settings{.test_cases = test_cases,
-                                .derandomize = true,
+                                .seed = 1,
                                 .database = hegel::Database::disabled()});
         } catch (const std::runtime_error& e) {
             if (!detail::is_expected_property_failure(e, *sentinel_thrown)) {
