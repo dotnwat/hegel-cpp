@@ -4,7 +4,11 @@
  * @cond INTERNAL
  */
 
+#include "config.h"
 #include "json.h"
+
+#if HEGEL_HAS_REFLECTION
+
 #include <rfl/Bytestring.hpp>
 #include <rfl/Processors.hpp>
 #include <rfl/Result.hpp>
@@ -149,5 +153,7 @@ namespace hegel::internal {
     }
 
 } // namespace hegel::internal
+
+#endif // HEGEL_HAS_REFLECTION
 
 /// @endcond

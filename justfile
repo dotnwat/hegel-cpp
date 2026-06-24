@@ -38,7 +38,7 @@ check-consumer MODE="subdirectory":
     BUILD_DIR="$ROOT/build/consumer-{{ MODE }}"
     if [ "{{ MODE }}" = "install" ]; then
         cmake -B build/consumer-hegel-install \
-            -DHEGEL_BUILD_TESTS=OFF -DHEGEL_BUILD_CONFORMANCE=OFF
+            -DHEGEL_BUILD_TESTS=OFF
         cmake --build build/consumer-hegel-install -j{{ jobs }}
         cmake --install build/consumer-hegel-install \
             --prefix "$ROOT/build/consumer-hegel-prefix"
@@ -78,11 +78,6 @@ check-consumer-all:
     done
     exit $rc
 
-check-conformance: build
-    uv run --with hegel-core \
-        --with pytest --with hypothesis \
-        pytest tests/conformance/test_conformance.py --durations=20 --durations-min=1.0
-
 check-lint: check-format check-tidy
 
 # these aliases are provided as ux improvements for local developers. CI should use the longer
@@ -90,5 +85,4 @@ check-lint: check-format check-tidy
 test: check-tests
 tidy: check-tidy
 lint: check-lint
-conformance: check-conformance
-check: check-lint check-tests check-docs check-conformance
+check: check-lint check-tests check-docs

@@ -6,6 +6,7 @@
 #include <stdexcept>
 #include <type_traits>
 
+#include "config.h"
 #include "internal.h"
 #include "nlohmann_reader.h"
 #include "test_case.h"
@@ -27,7 +28,9 @@ namespace hegel::generators {
     T default_parse_raw(const hegel::internal::json::json_raw_ref& result) {
         if constexpr (std::is_same_v<T, std::string>) {
             return result.get_string();
-        } else if constexpr (std::is_same_v<std::remove_cvref_t<T>, bool>) {
+        } else if constexpr (std::is_same_v<
+                                 std::remove_cv_t<std::remove_reference_t<T>>,
+                                 bool>) {
             return result.get_bool();
         } else if constexpr (std::is_floating_point_v<T>) {
             return static_cast<T>(result.get_double());
@@ -36,12 +39,20 @@ namespace hegel::generators {
         } else if constexpr (std::is_integral_v<T>) {
             return static_cast<T>(result.get_int64_t());
         } else {
+#if HEGEL_HAS_REFLECTION
             auto parse_result = internal::read_nlohmann<T>(result);
             if (!parse_result.has_value()) {
                 throw std::runtime_error(
-                    "Failed to parse server response into requested type");
+                    "Failed to parse engine response into requested type");
             }
             return parse_result.value();
+#else
+            static_assert(
+                internal::always_false_v<T>,
+                "Parsing this type from a generated value requires reflection. "
+                "Build hegel with HEGEL_REFLECTION=ON (the default, needs "
+                "C++20), or provide an explicit generator/parser for T.");
+#endif
         }
     }
     /// @endcond
@@ -62,10 +73,10 @@ namespace hegel::generators {
 
         T do_draw(const TestCase& tc) const {
             hegel::internal::json::json response =
-                internal::communicate_with_core(schema, tc);
+                internal::communicate_with_engine(schema, tc);
             if (!response.contains("result")) {
                 throw std::runtime_error(
-                    "Server response missing 'result' field");
+                    "engine response missing 'result' field");
             }
             return parse(response["result"]);
         }
@@ -305,7 +316,7 @@ namespace hegel::generators {
     // Generator that applies a client-side transformation to values drawn
     // from a source generator. Produced internally by Generator<T>::map().
     //
-    // Preserves basic-ness (and therefore the server-side schema) by
+    // Preserves basic-ness (and therefore the engine-side schema) by
     // composing the map function into the source's BasicGenerator::parse
     // step; falls back to `f(source->do_draw(tc))` when the source is not
     // basic.

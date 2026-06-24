@@ -341,9 +341,9 @@ namespace hegel::generators {
             {"max_value", std::numeric_limits<uint32_t>::max()}};
 
         hegel::internal::json::json response =
-            internal::communicate_with_core(schema, *tc_);
+            internal::communicate_with_engine(schema, *tc_);
         if (!response.contains("result")) {
-            throw std::runtime_error("Server response missing 'result' field");
+            throw std::runtime_error("Engine response missing 'result' field");
         }
         return ImplUtil::raw(response["result"]).get<uint32_t>();
     }

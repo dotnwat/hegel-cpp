@@ -9,7 +9,7 @@
 namespace hegel::generators {
 
     /// @cond INTERNAL
-    // Concrete IGenerator for sampled_from(). Schema asks the server for an
+    // Concrete IGenerator for sampled_from(). Schema asks the engine for an
     // integer index into the captured `elements_` vector; the client parser
     // does the lookup.
     template <typename T> class SampledFromGenerator : public IGenerator<T> {
@@ -240,7 +240,7 @@ namespace hegel::generators {
             if (!all_basic)
                 return std::nullopt;
 
-            // Server returns `[index, value]` for `one_of` schemas, so we
+            // engine returns `[index, value]` for `one_of` schemas, so we
             // can emit the children directly without per-branch tagging.
             hegel::internal::json::json children =
                 hegel::internal::json::json::array();

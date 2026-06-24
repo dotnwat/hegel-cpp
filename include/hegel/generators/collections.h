@@ -316,6 +316,13 @@ namespace hegel::generators {
             return Tuple{std::get<Is>(gens).do_draw(tc)...};
         }
 
+        template <typename Tuple, typename ParserTuple, size_t... Is>
+        Tuple parse_tuple_impl(const ParserTuple& parsers,
+                               const hegel::internal::json::json_raw_ref& raw,
+                               std::index_sequence<Is...>) {
+            return Tuple{std::get<Is>(parsers)(raw[Is])...};
+        }
+
     } // namespace detail
 
     // Concrete IGenerator for tuples(). Schema path requires every element
@@ -360,9 +367,8 @@ namespace hegel::generators {
                 [parsers = std::move(parsers)](
                     const hegel::internal::json::json_raw_ref& raw)
                     -> ResultTuple {
-                    return [&]<size_t... Is>(std::index_sequence<Is...>) {
-                        return ResultTuple{std::get<Is>(parsers)(raw[Is])...};
-                    }(std::index_sequence_for<Ts...>{});
+                    return detail::parse_tuple_impl<ResultTuple>(
+                        parsers, raw, std::index_sequence_for<Ts...>{});
                 }};
         }
 

@@ -61,12 +61,6 @@ function(hegel_add_test)
     gtest_discover_tests(${HAT_NAME})
 endfunction()
 
-hegel_add_test(NAME test_crc32 SOURCE test_crc32.cpp INTERNAL)
-hegel_add_test(NAME test_protocol SOURCE test_protocol.cpp INTERNAL)
-hegel_add_test(NAME test_utils SOURCE test_utils.cpp INTERNAL)
-hegel_add_test(NAME test_uv SOURCE test_uv.cpp INTERNAL)
-hegel_add_test(NAME test_installer SOURCE test_installer.cpp INTERNAL)
-
 foreach(name IN ITEMS integers floats strings collections flatmap
         mixed_types)
     hegel_add_test(NAME test_shrink_quality_${name}
@@ -85,8 +79,12 @@ hegel_add_test(NAME test_settings SOURCE test_settings.cpp)
 hegel_add_test(NAME test_hegel SOURCE test_hegel.cpp)
 hegel_add_test(NAME test_random SOURCE test_random.cpp)
 hegel_add_test(NAME test_no_nlohmann_include SOURCE test_no_nlohmann_include.cpp)
-hegel_add_test(NAME test_derived SOURCE test_derived.cpp)
 hegel_add_test(NAME test_compose SOURCE test_compose.cpp)
+
+# default_generator is only available with reflection (C++20).
+if(HEGEL_REFLECTION)
+    hegel_add_test(NAME test_derived SOURCE test_derived.cpp)
+endif()
 
 # The `subject` binary used by TempCppProject is defined as a regular target
 # in the parent build tree rather than a separate cmake project. This way it

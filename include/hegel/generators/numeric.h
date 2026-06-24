@@ -2,6 +2,7 @@
 
 #include <limits>
 
+#include "hegel/config.h"
 #include "hegel/core.h"
 
 namespace hegel::generators {
@@ -41,8 +42,11 @@ namespace hegel::generators {
     /// @cond INTERNAL
     // Concrete IGenerator<T> subclass produced by integers().
     template <typename T>
-        requires std::is_integral_v<T>
+    HEGEL_REQUIRES(std::is_integral_v<T>)
     class IntegerGenerator : public IGenerator<T> {
+        static_assert(std::is_integral_v<T>,
+                      "integers<T> requires an integral type T");
+
       public:
         explicit IntegerGenerator(IntegersParams<T> params = {})
             : params_(std::move(params)) {
@@ -73,8 +77,11 @@ namespace hegel::generators {
 
     // Concrete IGenerator<T> subclass produced by floats().
     template <typename T>
-        requires std::is_floating_point_v<T>
+    HEGEL_REQUIRES(std::is_floating_point_v<T>)
     class FloatGenerator : public IGenerator<T> {
+        static_assert(std::is_floating_point_v<T>,
+                      "floats<T> requires a floating-point type T");
+
       public:
         explicit FloatGenerator(FloatsParams<T> params = {})
             : params_(std::move(params)) {
@@ -142,7 +149,7 @@ namespace hegel::generators {
      * @return Generator producing integers in the specified range
      */
     template <typename T = int64_t>
-        requires std::is_integral_v<T>
+    HEGEL_REQUIRES(std::is_integral_v<T>)
     Generator<T> integers(IntegersParams<T> params = {}) {
         return Generator<T>(new IntegerGenerator<T>(std::move(params)));
     }
@@ -164,7 +171,7 @@ namespace hegel::generators {
      * @return Generator producing floats in the specified range
      */
     template <typename T = double>
-        requires std::is_floating_point_v<T>
+    HEGEL_REQUIRES(std::is_floating_point_v<T>)
     Generator<T> floats(FloatsParams<T> params = {}) {
         return Generator<T>(new FloatGenerator<T>(std::move(params)));
     }

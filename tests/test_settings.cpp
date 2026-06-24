@@ -177,7 +177,7 @@ TEST(FlakyReporting, FlakyGeneration) {
 // minimal counterexample should be replayed first on the next run that points
 // at the same database directory.
 //
-// XFAIL: Settings does not yet expose a `database_key`. The server treats
+// XFAIL: Settings does not yet expose a `database_key`. The engine treats
 // a null database_key as "don't persist", so the replay never happens. The
 // replay assertion below is wrapped in EXPECT_NONFATAL_FAILURE so that this
 // test passes today and will start failing (i.e. notice us) once database_key
