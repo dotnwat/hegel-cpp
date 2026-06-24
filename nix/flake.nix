@@ -49,9 +49,7 @@
         let
           lib = pkgs.lib;
           system = pkgs.system;
-          info =
-            libhegelAssets.${system}
-              or (throw "libhegel: no prebuilt release for ${system}");
+          info = libhegelAssets.${system} or (throw "libhegel: no prebuilt release for ${system}");
           ext = lib.last (lib.splitString "." info.asset);
         in
         pkgs.stdenvNoCC.mkDerivation {

@@ -1,25 +1,14 @@
 #pragma once
 
-/**
- * @file config.h
- * @brief Compile-time feature configuration.
- */
+// Compile-time feature configuration. Not part of the documented API surface.
 
-/**
- * @def HEGEL_HAS_REFLECTION
- * @brief Whether the reflect-cpp powered features are available.
- *
- * Gates @ref hegel::generators::default_generator and the automatic parsing of
- * reflectable structs. The CMake build defines this: `1` when built with
- * `HEGEL_REFLECTION=ON` (the default, which also requires C++20), `0`
- * otherwise. When the macro is not provided — e.g. the headers are used
- * outside the CMake target — it falls back to whether the compiler advertises
- * C++20 concepts, which reflect-cpp requires.
- *
- * Building with `-DHEGEL_REFLECTION=OFF` drops reflect-cpp and lets the library
- * be consumed from C++17; everything except `default_generator` (and the
- * automatic struct parser it relies on) still works.
- */
+// HEGEL_HAS_REFLECTION — whether the reflect-cpp powered features
+// (default_generator and automatic parsing of reflectable structs) are
+// available. The CMake build defines it: 1 with HEGEL_REFLECTION=ON (default,
+// requires C++20), 0 otherwise. When unset (headers used outside the CMake
+// target) it falls back to whether the compiler advertises C++20 concepts.
+// HEGEL_REFLECTION=OFF drops reflect-cpp so the library is consumable from
+// C++17; everything except default_generator still works.
 #ifndef HEGEL_HAS_REFLECTION
 #if defined(__cpp_concepts) && __cpp_concepts >= 201907L
 #define HEGEL_HAS_REFLECTION 1
@@ -28,13 +17,9 @@
 #endif
 #endif
 
-/**
- * @def HEGEL_REQUIRES
- * @brief A requires-clause under C++20, and nothing under C++17.
- *
- * Constrained templates pair this with a `static_assert` in the body so misuse
- * is still rejected with a clear message when concepts are unavailable.
- */
+// HEGEL_REQUIRES — a requires-clause under C++20, nothing under C++17.
+// Constrained templates pair it with a static_assert so misuse is still
+// rejected with a clear message when concepts are unavailable.
 #if defined(__cpp_concepts) && __cpp_concepts >= 201907L
 #define HEGEL_REQUIRES(...) requires(__VA_ARGS__)
 #else
