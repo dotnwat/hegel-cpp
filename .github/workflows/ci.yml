@@ -124,6 +124,25 @@ jobs:
       - name: Run consumer tests
         run: just check-consumer-all
 
+  cxx17:
+    name: cxx17
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+
+      - uses: ./.github/actions/install-tools
+        with:
+          tools: just
+
+      - name: Build and run the C++17 consumer (HEGEL_REFLECTION=OFF)
+        run: just check-cxx17
+
   nix:
     name: nix
     runs-on: ubuntu-latest
@@ -166,7 +185,7 @@ jobs:
   release:
     name: release
     if: github.event_name == 'push' && github.repository == 'hegeldev/hegel-cpp'
-    needs: [lint, build-and-test, consumer, docs]
+    needs: [lint, build-and-test, consumer, cxx17, docs]
     runs-on: ubuntu-latest
     permissions:
       contents: write

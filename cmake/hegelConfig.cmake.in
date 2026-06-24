@@ -17,9 +17,12 @@ include("${CMAKE_CURRENT_LIST_DIR}/hegelTargets.cmake")
 # and arrange for consumers to find it at build and run time.
 if(NOT TARGET hegel::libhegel)
     add_library(hegel::libhegel SHARED IMPORTED)
+    # @PACKAGE_CMAKE_INSTALL_LIBDIR@ resolves to an absolute path under the
+    # install prefix whether CMAKE_INSTALL_LIBDIR was configured relative or
+    # absolute (the latter happens under Nix).
     set_target_properties(hegel::libhegel PROPERTIES
         IMPORTED_LOCATION
-            "${PACKAGE_PREFIX_DIR}/@CMAKE_INSTALL_LIBDIR@/@HEGEL_LIBHEGEL_LOCAL_NAME@")
+            "@PACKAGE_CMAKE_INSTALL_LIBDIR@/@HEGEL_LIBHEGEL_LOCAL_NAME@")
 endif()
 set_property(TARGET hegel::hegel APPEND PROPERTY
     INTERFACE_LINK_LIBRARIES hegel::libhegel)

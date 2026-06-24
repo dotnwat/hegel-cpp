@@ -146,6 +146,7 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
       ${CMAKE_CURRENT_SOURCE_DIR}/cmake/hegelConfig.cmake.in
       ${CMAKE_CURRENT_BINARY_DIR}/hegelConfig.cmake
       INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/hegel
+      PATH_VARS CMAKE_INSTALL_LIBDIR
   )
 
   write_basic_package_version_file(

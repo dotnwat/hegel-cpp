@@ -78,6 +78,20 @@ check-consumer-all:
     done
     exit $rc
 
+# Verify the library, headers, and a consumer build and run under C++17
+# (HEGEL_REFLECTION=OFF drops reflect-cpp / default_generator).
+check-cxx17:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    ROOT=$(pwd)
+    cmake -B build/cxx17-hegel -DHEGEL_REFLECTION=OFF -DHEGEL_BUILD_TESTS=OFF
+    cmake --build build/cxx17-hegel -j{{ jobs }}
+    cmake --install build/cxx17-hegel --prefix "$ROOT/build/cxx17-prefix"
+    cmake -B build/cxx17-consumer -S tests/consumer/cxx17 \
+        -DCMAKE_PREFIX_PATH="$ROOT/build/cxx17-prefix"
+    cmake --build build/cxx17-consumer -j{{ jobs }}
+    "$ROOT/build/cxx17-consumer/consumer"
+
 check-lint: check-format check-tidy
 
 # these aliases are provided as ux improvements for local developers. CI should use the longer
