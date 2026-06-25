@@ -114,6 +114,14 @@ namespace hegel::impl {
         return run;
     }
 
+    hegel_test_case_t* test_case_from_blob(hegel_context_t* ctx,
+                                           hegel_settings_t* s,
+                                           const char* blob) {
+        hegel_test_case_t* tc = nullptr;
+        check_rc(ctx, hegel_test_case_from_blob(ctx, s, blob, &tc));
+        return tc;
+    }
+
     hegel_test_case_t* next_test_case(hegel_context_t* ctx, hegel_run_t* run) {
         hegel_test_case_t* tc = nullptr;
         check_rc(ctx, hegel_next_test_case(ctx, run, &tc));
@@ -216,8 +224,7 @@ namespace hegel::internal {
         if (impl::protocol::protocol_debug_enabled()) {
             std::cerr << "RESPONSE: " << value.dump() << "\n";
         }
-        // Auto-log generated values during the final replay (counterexample).
-        if (data->is_final) {
+        if (data->should_log()) {
             std::cerr << "Generated: " << value.dump() << "\n";
         }
 

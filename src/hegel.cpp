@@ -29,6 +29,12 @@
 namespace hegel {
 
     namespace {
+        constexpr const char* flaky_diagnostic =
+            "Flaky test detected: Your test produced different outcomes when "
+            "run with the same generated data — it failed when it previously "
+            "succeeded, or succeeded when it previously failed. This usually "
+            "means your test depends on external state such as global "
+            "variables, system time, or external random number generators.";
 
         // RAII guards for the libhegel handles. Each `*_free` is a no-op on
         // NULL and never throws.
@@ -88,17 +94,10 @@ namespace hegel {
             impl::mark_complete(ctx, tc, outcome.status, origin);
         }
 
-        // Replay a minimal counterexample blob to reproduce the user's notes
-        // and the failing exception's message for display. Returns the
-        // message (empty if the blob is stale / produced no exception).
-        std::string replay_failure(hegel_context_t* ctx, hegel_settings_t* s,
+        BodyOutcome replay_failure(hegel_context_t* ctx, hegel_settings_t* s,
                                    const char* blob, Verbosity verbosity,
                                    const std::function<void(TestCase&)>& fn) {
-            hegel_test_case_t* tc = nullptr;
-            hegel_result_t rc = hegel_test_case_from_blob(ctx, s, blob, &tc);
-            if (rc != HEGEL_OK || tc == nullptr) {
-                return "";
-            }
+            hegel_test_case_t* tc = impl::test_case_from_blob(ctx, s, blob);
             // Positional init (fields: ctx, tc, is_final, verbosity) so this
             // TU stays clean under a C++17 (HEGEL_REFLECTION=OFF) build.
             impl::test_case::TestCaseData data{ctx, tc, /*is_final=*/true,
@@ -107,7 +106,7 @@ namespace hegel {
             BodyOutcome outcome = run_body(fn, tc_obj);
             mark_complete(ctx, tc, outcome);
             hegel_test_case_free(ctx, tc);
-            return outcome.message;
+            return outcome;
         }
 
         // Translate hegel::Settings onto a fresh hegel_settings_t handle.
@@ -230,10 +229,15 @@ namespace hegel {
             if (blob == nullptr) {
                 continue;
             }
-            std::string replayed =
+            BodyOutcome outcome =
                 replay_failure(ctx, s, blob, settings.verbosity, test_fn);
-            if (message.empty() && !replayed.empty()) {
-                message = replayed;
+            if (outcome.status != HEGEL_STATUS_INTERESTING) {
+                // The engine's counterexample no longer fails on replay.
+                throw std::runtime_error(flaky_diagnostic);
+            }
+            // temporary - only report one failure
+            if (message.empty() && !outcome.message.empty()) {
+                message = outcome.message;
             }
         }
 

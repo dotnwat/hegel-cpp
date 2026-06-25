@@ -37,6 +37,9 @@ namespace hegel::impl {
     hegel_settings_t* settings_new(hegel_context_t* ctx);
 
     hegel_run_t* run_start(hegel_context_t* ctx, hegel_settings_t* s);
+    hegel_test_case_t* test_case_from_blob(hegel_context_t* ctx,
+                                           hegel_settings_t* s,
+                                           const char* blob);
     /// NULL once the engine has no more cases to hand out.
     hegel_test_case_t* next_test_case(hegel_context_t* ctx, hegel_run_t* run);
     void mark_complete(hegel_context_t* ctx, hegel_test_case_t* tc,

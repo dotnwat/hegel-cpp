@@ -17,6 +17,22 @@ namespace hegel::impl::test_case {
         hegel_test_case_t* tc;
         bool is_final;
         Verbosity verbosity;
+
+        // Whether per-case diagnostics (notes, drawn values) should print:
+        // never under Quiet, only on the final replay under Normal, and on
+        // every case under Verbose / Debug.
+        bool should_log() const {
+            switch (verbosity) {
+            case Verbosity::Quiet:
+                return false;
+            case Verbosity::Normal:
+                return is_final;
+            case Verbosity::Verbose:
+            case Verbosity::Debug:
+                return true;
+            }
+            return false;
+        }
     };
 
 } // namespace hegel::impl::test_case
