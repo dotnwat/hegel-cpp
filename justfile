@@ -92,6 +92,37 @@ check-cxx17:
     cmake --build build/cxx17-consumer -j{{ jobs }}
     "$ROOT/build/cxx17-consumer/consumer"
 
+# Minimum line coverage (%) enforced by `check-coverage`.
+coverage_min := "100"
+
+# Build instrumented, run the tests, and fail if line coverage over src/ and
+# include/hegel/ drops below `coverage_min`.
+check-coverage:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cmake -B build/coverage -DHEGEL_COVERAGE=ON ${CMAKE_FLAGS:-}
+    cmake --build build/coverage -j{{ jobs }}
+    ctest --test-dir build/coverage/tests --output-on-failure -j{{ jobs }}
+    # Match the gcov tool to the compiler that produced the .gcda data.
+    cxx="${CXX:-c++}"
+    if "$cxx" --version 2>/dev/null | grep -qi clang; then
+        gcov_bin="$(command -v llvm-cov llvm-cov-18 2>/dev/null | head -1 || true)"
+        if [ -z "$gcov_bin" ] && command -v xcrun >/dev/null 2>&1; then
+            gcov_bin="$(xcrun --find llvm-cov)"
+        fi
+        gcov_tool="${gcov_bin:-llvm-cov} gcov"
+    else
+        ver="${cxx##*-}"
+        gcov_tool="gcov"
+        if [[ "$ver" =~ ^[0-9]+$ ]] && command -v "gcov-$ver" >/dev/null 2>&1; then
+            gcov_tool="gcov-$ver"
+        fi
+    fi
+    uvx gcovr --root . --gcov-executable "$gcov_tool" \
+        --filter 'src/' --filter 'include/hegel/' \
+        --exclude-unreachable-branches --print-summary \
+        --fail-under-line {{ coverage_min }} build/coverage
+
 check-lint: check-format check-tidy
 
 # these aliases are provided as ux improvements for local developers. CI should use the longer
@@ -99,4 +130,4 @@ check-lint: check-format check-tidy
 test: check-tests
 tidy: check-tidy
 lint: check-lint
-check: check-lint check-tests check-docs
+check: check-lint check-tests check-docs check-coverage
