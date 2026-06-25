@@ -50,7 +50,7 @@ The library calls libhegel's C ABI (`hegel_*` functions) directly, in-process �
 
 ### Draw path
 
-A `draw()` calls `internal::communicate_with_engine(schema, tc)` (`src/engine.cpp`), which CBOR-encodes the generator's schema, calls `hegel_generate`, and CBOR-decodes the returned value:
+A `draw()` calls `internal::generate_from_schema(schema, tc)` (`src/engine.cpp`), which CBOR-encodes the generator's schema, calls `hegel_generate`, and CBOR-decodes the returned value:
 - CBOR via nlohmann's `to_cbor()`/`from_cbor()` (`src/protocol.h`); WTF-8 hegel strings arrive as tagged binary (subtype 91) and are converted back to strings.
 - `HEGEL_E_STOP_TEST` → `HegelStopTest` (case marked OVERRUN); `HEGEL_E_ASSUME` → `HegelReject` (INVALID); other non-OK codes throw `std::runtime_error` with `hegel_context_last_error`.
 
@@ -61,12 +61,12 @@ Public headers in `include/hegel/`:
 - **`test_case.h`** - TestCase class with `draw()`, `assume()`, `note()` methods passed to the test callback
 - **`core.h`** - `IGenerator<T>`, `Generator<T>`, `BasicGenerator<T>` (schema + client-side parser bundle), `CompositeGenerator<T>`, `MappedGenerator<T, U>` with `map()`, `flat_map()`, `filter()` combinators
 - **`settings.h`** - `Settings`, `Database`, `Verbosity` enum
-- **`internal.h`** - `communicate_with_engine()` and the `HegelReject` / `HegelStopTest` exceptions (internal only; users interact via `TestCase` methods)
+- **`internal.h`** - `generate_from_schema()` and the `HegelReject` / `HegelStopTest` exceptions (internal only; users interact via `TestCase` methods)
 - **`json.h` / `nlohmann_reader.h`** - JSON interop helpers (avoid including `<nlohmann/json.hpp>` from public headers; `test_no_nlohmann_include.cpp` enforces this)
 - **`generators/`** - Strategy factory functions in `hegel::generators` namespace, split by category: `primitives.h`, `numeric.h`, `strings.h`, `collections.h`, `combinators.h`, `formats.h`, `builds.h`, `default.h` (type-directed derivation via reflect-cpp), `random.h`
 
 Private implementation in `src/`:
-- **`engine.{h,cpp}`** - Thin helpers over the libhegel C ABI: `last_error()` and the `communicate_with_engine()` draw path (`hegel_generate`)
+- **`engine.{h,cpp}`** - Thin helpers over the libhegel C ABI: `last_error()` and the `generate_from_schema()` draw path (`hegel_generate`)
 - **`protocol.{h,cpp}`** - CBOR encode/decode helpers (nlohmann-backed) + the protocol-debug flag. (The former binary packet/socket protocol is gone.)
 - **`test_case.{h,cpp}`** - Private `TestCaseData` struct (holds the borrowed `hegel_context_t*` / `hegel_test_case_t*` plus per-iteration state) and the `TestCase` method implementations
 - **`json_impl.h`** - Internal nlohmann-backed JSON implementation (not exposed publicly)

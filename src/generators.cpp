@@ -341,7 +341,7 @@ namespace hegel::generators {
             {"max_value", std::numeric_limits<uint32_t>::max()}};
 
         hegel::internal::json::json response =
-            internal::communicate_with_engine(schema, *tc_);
+            internal::generate_from_schema(schema, *tc_);
         if (!response.contains("result")) {
             throw std::runtime_error("Engine response missing 'result' field");
         }

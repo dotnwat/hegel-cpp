@@ -34,8 +34,8 @@ namespace hegel::internal {
     // Returns `{"result": <value>}` so callers (BasicGenerator::do_draw,
     // HegelRandom) can keep reading `response["result"]`.
     hegel::internal::json::json
-    communicate_with_engine(const hegel::internal::json::json& schema,
-                            const hegel::TestCase& tc) {
+    generate_from_schema(const hegel::internal::json::json& schema,
+                         const hegel::TestCase& tc) {
         auto* data = tc.data();
         hegel_context_t* ctx = data->ctx;
         hegel_test_case_t* htc = data->tc;

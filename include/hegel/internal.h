@@ -14,8 +14,8 @@ namespace hegel {
 namespace hegel::internal {
     /// @cond INTERNAL
     hegel::internal::json::json
-    communicate_with_engine(const hegel::internal::json::json& schema,
-                            const hegel::TestCase& tc);
+    generate_from_schema(const hegel::internal::json::json& schema,
+                         const hegel::TestCase& tc);
 
     /* Exception thrown when a test case is rejected and should be
      * discarded (e.g. by `TestCase::assume(false)`, an exhausted

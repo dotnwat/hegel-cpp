@@ -73,7 +73,7 @@ namespace hegel::generators {
 
         T do_draw(const TestCase& tc) const {
             hegel::internal::json::json response =
-                internal::communicate_with_engine(schema, tc);
+                internal::generate_from_schema(schema, tc);
             if (!response.contains("result")) {
                 throw std::runtime_error(
                     "engine response missing 'result' field");
