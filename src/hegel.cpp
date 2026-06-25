@@ -52,15 +52,6 @@ namespace hegel {
             ~RunGuard() { hegel_run_free(ctx, run); }
         };
 
-        // Throw with the context diagnostic when a libhegel call fails.
-        void check(hegel_context_t* ctx, hegel_result_t rc, const char* what) {
-            if (rc != HEGEL_OK) {
-                std::string msg = impl::last_error(ctx);
-                throw std::runtime_error(std::string(what) + " failed" +
-                                         (msg.empty() ? "" : ": " + msg));
-            }
-        }
-
         struct BodyOutcome {
             hegel_status_t status;
             std::string origin;
@@ -94,8 +85,7 @@ namespace hegel {
                            const BodyOutcome& outcome) {
             const char* origin =
                 outcome.origin.empty() ? nullptr : outcome.origin.c_str();
-            check(ctx, hegel_mark_complete(ctx, tc, outcome.status, origin),
-                  "hegel_mark_complete");
+            impl::mark_complete(ctx, tc, outcome.status, origin);
         }
 
         // Replay a minimal counterexample blob to reproduce the user's notes
@@ -109,9 +99,9 @@ namespace hegel {
             if (rc != HEGEL_OK || tc == nullptr) {
                 return "";
             }
-            // Positional init (fields: ctx, tc, is_last_run, verbosity) so this
+            // Positional init (fields: ctx, tc, is_final, verbosity) so this
             // TU stays clean under a C++17 (HEGEL_REFLECTION=OFF) build.
-            impl::test_case::TestCaseData data{ctx, tc, /*is_last_run=*/true,
+            impl::test_case::TestCaseData data{ctx, tc, /*is_final=*/true,
                                                verbosity};
             TestCase tc_obj(&data);
             BodyOutcome outcome = run_body(fn, tc_obj);
@@ -123,10 +113,8 @@ namespace hegel {
         // Translate hegel::Settings onto a fresh hegel_settings_t handle.
         void apply_settings(hegel_context_t* ctx, hegel_settings_t* s,
                             const Settings& settings) {
-            check(ctx,
-                  hegel_settings_set_test_cases(
-                      ctx, s, settings.test_cases.value_or(100)),
-                  "hegel_settings_set_test_cases");
+            impl::settings_set_test_cases(ctx, s,
+                                          settings.test_cases.value_or(100));
 
             hegel_verbosity_t v = HEGEL_VERBOSITY_NORMAL;
             switch (settings.verbosity) {
@@ -143,29 +131,21 @@ namespace hegel {
                 v = HEGEL_VERBOSITY_DEBUG;
                 break;
             }
-            check(ctx, hegel_settings_set_verbosity(ctx, s, v),
-                  "hegel_settings_set_verbosity");
+            impl::settings_set_verbosity(ctx, s, v);
 
-            check(ctx,
-                  hegel_settings_set_seed(ctx, s, settings.seed.value_or(0),
-                                          settings.seed.has_value()),
-                  "hegel_settings_set_seed");
-            check(ctx,
-                  hegel_settings_set_derandomize(ctx, s, settings.derandomize),
-                  "hegel_settings_set_derandomize");
+            impl::settings_set_seed(ctx, s, settings.seed.value_or(0),
+                                    settings.seed.has_value());
+            impl::settings_set_derandomize(ctx, s, settings.derandomize);
 
             switch (settings.database.kind()) {
             case Database::Kind::Unset:
                 break;
             case Database::Kind::Disabled:
-                check(ctx, hegel_settings_set_database(ctx, s, ""),
-                      "hegel_settings_set_database");
+                impl::settings_set_database(ctx, s, "");
                 break;
             case Database::Kind::Path:
-                check(ctx,
-                      hegel_settings_set_database(
-                          ctx, s, settings.database.path().c_str()),
-                      "hegel_settings_set_database");
+                impl::settings_set_database(ctx, s,
+                                            settings.database.path().c_str());
                 break;
             }
 
@@ -187,10 +167,7 @@ namespace hegel {
                 }
             }
             if (suppress != 0) {
-                check(
-                    ctx,
-                    hegel_settings_set_suppress_health_check(ctx, s, suppress),
-                    "hegel_settings_set_suppress_health_check");
+                impl::settings_set_suppress_health_check(ctx, s, suppress);
             }
         }
 
@@ -204,37 +181,30 @@ namespace hegel {
         hegel_context_t* ctx = ctx_guard.ctx;
 
         SettingsGuard settings_guard{ctx};
-        check(ctx, hegel_settings_new(ctx, &settings_guard.s),
-              "hegel_settings_new");
+        settings_guard.s = impl::settings_new(ctx);
         hegel_settings_t* s = settings_guard.s;
         apply_settings(ctx, s, settings);
 
         RunGuard run_guard{ctx};
-        check(ctx, hegel_run_start(ctx, s, &run_guard.run), "hegel_run_start");
+        run_guard.run = impl::run_start(ctx, s);
         hegel_run_t* run = run_guard.run;
 
         // Generation loop: pull cases until the engine reports completion
         // (NULL test case), running and marking each.
         while (true) {
-            hegel_test_case_t* tc = nullptr;
-            check(ctx, hegel_next_test_case(ctx, run, &tc),
-                  "hegel_next_test_case");
+            hegel_test_case_t* tc = impl::next_test_case(ctx, run);
             if (tc == nullptr) {
                 break;
             }
-            impl::test_case::TestCaseData data{ctx, tc, /*is_last_run=*/false,
+            impl::test_case::TestCaseData data{ctx, tc, /*is_final=*/false,
                                                settings.verbosity};
             TestCase tc_obj(&data);
             BodyOutcome outcome = run_body(test_fn, tc_obj);
             mark_complete(ctx, tc, outcome);
         }
 
-        const hegel_run_result_t* result = nullptr;
-        check(ctx, hegel_run_result(ctx, run, &result), "hegel_run_result");
-
-        hegel_run_status_t run_status = HEGEL_RUN_STATUS_PASSED;
-        check(ctx, hegel_run_result_status(ctx, result, &run_status),
-              "hegel_run_result_status");
+        const hegel_run_result_t* result = impl::run_result(ctx, run);
+        hegel_run_status_t run_status = impl::run_result_status(ctx, result);
 
         if (run_status == HEGEL_RUN_STATUS_PASSED) {
             return;
@@ -243,27 +213,20 @@ namespace hegel {
         if (run_status == HEGEL_RUN_STATUS_ERROR) {
             // The run itself failed (health check, nondeterminism, engine
             // panic) and produced no verdict on the property.
-            const char* run_err = nullptr;
-            check(ctx, hegel_run_result_error(ctx, result, &run_err),
-                  "hegel_run_result_error");
+            const char* run_err = impl::run_result_error(ctx, result);
             throw std::runtime_error(std::string("Hegel run error: ") +
                                      (run_err ? run_err : "unknown error"));
         }
 
         // Failed: replay each distinct counterexample to surface its notes and
         // exception message, then raise.
-        size_t failure_count = 0;
-        check(ctx, hegel_run_result_failure_count(ctx, result, &failure_count),
-              "hegel_run_result_failure_count");
+        size_t failure_count = impl::run_result_failure_count(ctx, result);
 
         std::string message;
         for (size_t i = 0; i < failure_count; i++) {
-            const hegel_failure_t* failure = nullptr;
-            check(ctx, hegel_run_result_failure(ctx, result, i, &failure),
-                  "hegel_run_result_failure");
-            const char* blob = nullptr;
-            check(ctx, hegel_failure_reproduction_blob(ctx, failure, &blob),
-                  "hegel_failure_reproduction_blob");
+            const hegel_failure_t* failure =
+                impl::run_result_failure(ctx, result, i);
+            const char* blob = impl::failure_reproduction_blob(ctx, failure);
             if (blob == nullptr) {
                 continue;
             }

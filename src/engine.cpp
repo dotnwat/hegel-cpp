@@ -25,6 +25,149 @@ namespace hegel::impl {
         return msg ? std::string(msg) : std::string();
     }
 
+    namespace {
+
+        // Translate a libhegel return code into success or a thrown
+        // diagnostic, deriving the label from the code and appending the
+        // context's last-error message.
+        void check_rc(hegel_context_t* ctx, hegel_result_t rc) {
+            if (rc == HEGEL_OK) {
+                return;
+            }
+            const char* label;
+            switch (rc) {
+            case HEGEL_E_STOP_TEST:
+                label = "engine stopped test";
+                break;
+            case HEGEL_E_ASSUME:
+                label = "assumption rejected";
+                break;
+            case HEGEL_E_BACKEND:
+                label = "backend error";
+                break;
+            case HEGEL_E_INVALID_HANDLE:
+                label = "invalid handle";
+                break;
+            case HEGEL_E_INVALID_ARG:
+                label = "invalid argument";
+                break;
+            case HEGEL_E_ALREADY_COMPLETE:
+                label = "test case already complete";
+                break;
+            case HEGEL_E_NOT_COMPLETE:
+                label = "previous test case not complete";
+                break;
+            case HEGEL_E_INTERNAL:
+                label = "internal error";
+                break;
+            default:
+                label = "unknown error";
+                break;
+            }
+            std::string msg = last_error(ctx);
+            throw std::runtime_error(std::string(label) +
+                                     (msg.empty() ? "" : ": " + msg));
+        }
+
+    } // namespace
+
+    void settings_set_test_cases(hegel_context_t* ctx, hegel_settings_t* s,
+                                 uint64_t test_cases) {
+        check_rc(ctx, hegel_settings_set_test_cases(ctx, s, test_cases));
+    }
+
+    void settings_set_verbosity(hegel_context_t* ctx, hegel_settings_t* s,
+                                hegel_verbosity_t verbosity) {
+        check_rc(ctx, hegel_settings_set_verbosity(ctx, s, verbosity));
+    }
+
+    void settings_set_seed(hegel_context_t* ctx, hegel_settings_t* s,
+                           uint64_t seed, bool has_seed) {
+        check_rc(ctx, hegel_settings_set_seed(ctx, s, seed, has_seed));
+    }
+
+    void settings_set_derandomize(hegel_context_t* ctx, hegel_settings_t* s,
+                                  bool derandomize) {
+        check_rc(ctx, hegel_settings_set_derandomize(ctx, s, derandomize));
+    }
+
+    void settings_set_database(hegel_context_t* ctx, hegel_settings_t* s,
+                               const char* path) {
+        check_rc(ctx, hegel_settings_set_database(ctx, s, path));
+    }
+
+    void settings_set_suppress_health_check(hegel_context_t* ctx,
+                                            hegel_settings_t* s,
+                                            uint32_t mask) {
+        check_rc(ctx, hegel_settings_set_suppress_health_check(ctx, s, mask));
+    }
+
+    hegel_settings_t* settings_new(hegel_context_t* ctx) {
+        hegel_settings_t* s = nullptr;
+        check_rc(ctx, hegel_settings_new(ctx, &s));
+        return s;
+    }
+
+    hegel_run_t* run_start(hegel_context_t* ctx, hegel_settings_t* s) {
+        hegel_run_t* run = nullptr;
+        check_rc(ctx, hegel_run_start(ctx, s, &run));
+        return run;
+    }
+
+    hegel_test_case_t* next_test_case(hegel_context_t* ctx, hegel_run_t* run) {
+        hegel_test_case_t* tc = nullptr;
+        check_rc(ctx, hegel_next_test_case(ctx, run, &tc));
+        return tc;
+    }
+
+    void mark_complete(hegel_context_t* ctx, hegel_test_case_t* tc,
+                       hegel_status_t status, const char* origin) {
+        check_rc(ctx, hegel_mark_complete(ctx, tc, status, origin));
+    }
+
+    const hegel_run_result_t* run_result(hegel_context_t* ctx,
+                                         hegel_run_t* run) {
+        const hegel_run_result_t* result = nullptr;
+        check_rc(ctx, hegel_run_result(ctx, run, &result));
+        return result;
+    }
+
+    hegel_run_status_t run_result_status(hegel_context_t* ctx,
+                                         const hegel_run_result_t* result) {
+        hegel_run_status_t status = HEGEL_RUN_STATUS_PASSED;
+        check_rc(ctx, hegel_run_result_status(ctx, result, &status));
+        return status;
+    }
+
+    const char* run_result_error(hegel_context_t* ctx,
+                                 const hegel_run_result_t* result) {
+        const char* err = nullptr;
+        check_rc(ctx, hegel_run_result_error(ctx, result, &err));
+        return err;
+    }
+
+    size_t run_result_failure_count(hegel_context_t* ctx,
+                                    const hegel_run_result_t* result) {
+        size_t count = 0;
+        check_rc(ctx, hegel_run_result_failure_count(ctx, result, &count));
+        return count;
+    }
+
+    const hegel_failure_t* run_result_failure(hegel_context_t* ctx,
+                                              const hegel_run_result_t* result,
+                                              size_t index) {
+        const hegel_failure_t* failure = nullptr;
+        check_rc(ctx, hegel_run_result_failure(ctx, result, index, &failure));
+        return failure;
+    }
+
+    const char* failure_reproduction_blob(hegel_context_t* ctx,
+                                          const hegel_failure_t* failure) {
+        const char* blob = nullptr;
+        check_rc(ctx, hegel_failure_reproduction_blob(ctx, failure, &blob));
+        return blob;
+    }
+
 } // namespace hegel::impl
 
 namespace hegel::internal {
@@ -74,7 +217,7 @@ namespace hegel::internal {
             std::cerr << "RESPONSE: " << value.dump() << "\n";
         }
         // Auto-log generated values during the final replay (counterexample).
-        if (data->is_last_run) {
+        if (data->is_final) {
             std::cerr << "Generated: " << value.dump() << "\n";
         }
 

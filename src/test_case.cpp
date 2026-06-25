@@ -14,7 +14,7 @@ namespace hegel {
     }
 
     void TestCase::note(std::string_view message) const {
-        if (data_->is_last_run) {
+        if (data_->is_final) {
             std::cerr << message << std::endl;
         }
     }

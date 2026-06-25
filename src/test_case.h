@@ -15,7 +15,7 @@ namespace hegel::impl::test_case {
     struct TestCaseData {
         hegel_context_t* ctx;
         hegel_test_case_t* tc;
-        bool is_last_run;
+        bool is_final;
         Verbosity verbosity;
     };
 
