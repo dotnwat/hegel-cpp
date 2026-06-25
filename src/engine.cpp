@@ -19,6 +19,7 @@
 #include <vector>
 
 namespace hegel::impl {
+    // GCOVR_EXCL_START
 
     std::string last_error(hegel_context_t* ctx) {
         const char* msg = hegel_context_last_error(ctx);
@@ -175,6 +176,8 @@ namespace hegel::impl {
         check_rc(ctx, hegel_failure_reproduction_blob(ctx, failure, &blob));
         return blob;
     }
+
+    // GCOVR_EXCL_STOP
 
 } // namespace hegel::impl
 

@@ -92,11 +92,6 @@ check-cxx17:
     cmake --build build/cxx17-consumer -j{{ jobs }}
     "$ROOT/build/cxx17-consumer/consumer"
 
-# Minimum line coverage (%) enforced by `check-coverage`.
-coverage_min := "100"
-
-# Build instrumented, run the tests, and fail if line coverage over src/ and
-# include/hegel/ drops below `coverage_min`.
 check-coverage:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -121,7 +116,8 @@ check-coverage:
     uvx gcovr --root . --gcov-executable "$gcov_tool" \
         --filter 'src/' --filter 'include/hegel/' \
         --exclude-unreachable-branches --print-summary \
-        --fail-under-line {{ coverage_min }} build/coverage
+        --json build/coverage/coverage.json build/coverage
+    python3 scripts/check-coverage.py build/coverage/coverage.json
 
 check-lint: check-format check-tidy
 

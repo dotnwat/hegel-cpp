@@ -31,7 +31,7 @@ namespace hegel::impl::test_case {
             case Verbosity::Debug:
                 return true;
             }
-            return false;
+            return false; // GCOVR_EXCL_LINE - switch above is exhaustive
         }
     };
 
