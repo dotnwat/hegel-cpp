@@ -8,7 +8,7 @@
 
 #include "config.h"
 #include "internal.h"
-#include "nlohmann_reader.h"
+#include "json.h"
 #include "test_case.h"
 
 /**
@@ -22,8 +22,9 @@ namespace hegel::generators {
 
     /// @cond INTERNAL
     // Default client-side parser used by schema-backed generators whose parse
-    // step is determined solely by T. Primitives use typed accessors on the
-    // raw json_raw_ref; reflectable composite types fall back to reflect-cpp.
+    // step is determined solely by T. Only primitives are parsed this way;
+    // composites assemble their result from per-element parsers in their own
+    // do_draw, so this is never instantiated for a non-primitive T.
     template <typename T>
     T default_parse_raw(const hegel::internal::json::json_raw_ref& result) {
         if constexpr (std::is_same_v<T, std::string>) {
@@ -39,20 +40,10 @@ namespace hegel::generators {
         } else if constexpr (std::is_integral_v<T>) {
             return static_cast<T>(result.get_int64_t());
         } else {
-#if HEGEL_HAS_REFLECTION
-            auto parse_result = internal::read_nlohmann<T>(result);
-            if (!parse_result.has_value()) {
-                throw std::runtime_error(
-                    "Failed to parse engine response into requested type");
-            }
-            return parse_result.value();
-#else
             static_assert(
                 internal::always_false_v<T>,
-                "Parsing this type from a generated value requires reflection. "
-                "Build hegel with HEGEL_REFLECTION=ON (the default, needs "
-                "C++20), or provide an explicit generator/parser for T.");
-#endif
+                "default_parse_raw only supports primitive types; provide an "
+                "explicit generator/parser for T.");
         }
     }
     /// @endcond

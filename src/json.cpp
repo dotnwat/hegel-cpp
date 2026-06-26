@@ -7,7 +7,6 @@
 #include <cstdint>
 #include <initializer_list>
 #include <memory>
-#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -133,9 +132,6 @@ namespace hegel::internal::json {
     bool json_raw_ref::get_bool() const noexcept {
         return ref->data.get<bool>();
     }
-    uint32_t json_raw_ref::get_uint32_t() const noexcept {
-        return ref->data.get<uint32_t>();
-    }
     uint64_t json_raw_ref::get_uint64_t() const noexcept {
         return ref->data.get<uint64_t>();
     }
@@ -145,8 +141,6 @@ namespace hegel::internal::json {
     double json_raw_ref::get_double() const noexcept {
         return ref->data.get<double>();
     }
-
-    size_t json_raw_ref::size() const noexcept { return ref->data.size(); }
 
     json_raw_ref& json_raw_ref::operator=(const size_t& other) {
         ref->data = other;
@@ -180,29 +174,6 @@ namespace hegel::internal::json {
     }
 #endif
 
-    bool json_raw_ref::is_string() const noexcept {
-        return ref->data.is_string();
-    }
-    bool json_raw_ref::is_null() const noexcept { return ref->data.is_null(); }
-    bool json_raw_ref::is_boolean() const noexcept {
-        return ref->data.is_boolean();
-    }
-    bool json_raw_ref::is_number() const noexcept {
-        return ref->data.is_number();
-    }
-    bool json_raw_ref::is_number_integer() const noexcept {
-        return ref->data.is_number_integer();
-    }
-    bool json_raw_ref::is_number_unsigned() const noexcept {
-        return ref->data.is_number_unsigned();
-    }
-    bool json_raw_ref::is_array() const noexcept {
-        return ref->data.is_array();
-    }
-    bool json_raw_ref::is_object() const noexcept {
-        return ref->data.is_object();
-    }
-
     json_raw_ref json_raw_ref::operator[](size_t index) const {
         return json_raw_ref(new json_ref_holder(ref->data[index]));
     }
@@ -212,24 +183,6 @@ namespace hegel::internal::json {
             result.push_back(json_raw_ref(new json_ref_holder(elt)));
         }
         return result;
-    }
-
-    std::vector<std::pair<std::string, json_raw_ref>>
-    json_raw_ref::items() const {
-        std::vector<std::pair<std::string, json_raw_ref>> result;
-        for (auto& [key, val] : ref->data.items()) {
-            result.push_back(
-                std::make_pair(key, json_raw_ref(new json_ref_holder(val))));
-        }
-        return result;
-    }
-
-    std::optional<json_raw_ref>
-    json_raw_ref::find(const std::string& key) const {
-        auto it = ref->data.find(key);
-        return (it == ref->data.end())
-                   ? std::nullopt
-                   : std::optional(json_raw_ref(new json_ref_holder(*it)));
     }
 
 } // namespace hegel::internal::json

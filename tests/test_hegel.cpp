@@ -135,3 +135,32 @@ TEST(NonSerializable, SampledFromWorksWithOpaqueType) {
                     drawn == OpaqueHandle{3});
     });
 }
+
+// Generated floats travel back from the engine as CBOR, which encodes IEEE-754
+// values natively. NaN and +/-infinity must therefore survive the round-trip
+// rather than being flattened (a JSON-text hop would lose them). Drawing an
+// unbounded float (allow_nan / allow_infinity default to true) and observing
+// each special value across the run pins this property down.
+TEST(Floats, NanAndInfinitySurviveGeneration) {
+    bool saw_nan = false;
+    bool saw_pos_inf = false;
+    bool saw_neg_inf = false;
+
+    auto gen = gs::floats<double>();
+    hegel::test(
+        [&](hegel::TestCase& tc) {
+            double x = tc.draw(gen);
+            if (std::isnan(x)) {
+                saw_nan = true;
+            } else if (std::isinf(x)) {
+                (x > 0 ? saw_pos_inf : saw_neg_inf) = true;
+            }
+        },
+        hegel::Settings{.test_cases = 2000,
+                        .seed = 1,
+                        .database = hegel::Database::disabled()});
+
+    EXPECT_TRUE(saw_nan) << "NaN never generated; CBOR round-trip may drop it";
+    EXPECT_TRUE(saw_pos_inf) << "+infinity never generated";
+    EXPECT_TRUE(saw_neg_inf) << "-infinity never generated";
+}

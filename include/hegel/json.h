@@ -7,14 +7,9 @@
 #include <cstddef>
 #include <initializer_list>
 #include <memory>
-#include <optional>
 #include <string>
 #include <type_traits>
 #include <vector>
-
-namespace hegel::internal {
-    class NlohmannReader;
-}
 
 namespace hegel::internal::json {
     class json;
@@ -34,21 +29,9 @@ namespace hegel::internal::json {
 
         std::string get_string() const noexcept;
         bool get_bool() const noexcept;
-        uint32_t get_uint32_t() const noexcept;
         uint64_t get_uint64_t() const noexcept;
         int64_t get_int64_t() const noexcept;
         double get_double() const noexcept;
-
-        size_t size() const noexcept;
-
-        bool is_string() const noexcept;
-        bool is_null() const noexcept;
-        bool is_boolean() const noexcept;
-        bool is_number() const noexcept;
-        bool is_number_integer() const noexcept;
-        bool is_number_unsigned() const noexcept;
-        bool is_array() const noexcept;
-        bool is_object() const noexcept;
 
         json_raw_ref& operator=(const size_t& other);
         json_raw_ref& operator=(const double& other);
@@ -63,8 +46,6 @@ namespace hegel::internal::json {
         json_raw_ref operator[](size_t index) const;
 
         std::vector<json_raw_ref> iterate() const;
-        std::vector<std::pair<std::string, json_raw_ref>> items() const;
-        std::optional<json_raw_ref> find(const std::string& key) const;
     };
 
     class json {
