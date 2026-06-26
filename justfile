@@ -115,7 +115,7 @@ check-coverage:
     fi
     uvx gcovr --root . --gcov-executable "$gcov_tool" \
         --filter 'src/' --filter 'include/hegel/' \
-        --exclude-unreachable-branches --print-summary \
+        --exclude-unreachable-branches \
         --json build/coverage/coverage.json build/coverage
     python3 scripts/check-coverage.py build/coverage/coverage.json
 
