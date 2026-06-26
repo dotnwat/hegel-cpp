@@ -81,45 +81,25 @@ hegel_add_test(NAME test_random SOURCE test_random.cpp)
 hegel_add_test(NAME test_no_nlohmann_include SOURCE test_no_nlohmann_include.cpp)
 hegel_add_test(NAME test_compose SOURCE test_compose.cpp)
 hegel_add_test(NAME test_composite_fallback SOURCE test_composite_fallback.cpp)
+hegel_add_test(NAME test_diagnostics SOURCE test_diagnostics.cpp)
 hegel_add_test(NAME test_formats SOURCE test_formats.cpp)
 
 # default_generator is only available with reflection (C++20).
 if(HEGEL_REFLECTION)
     hegel_add_test(NAME test_derived SOURCE test_derived.cpp)
 endif()
-
-# The `subject` binary used by TempCppProject is defined as a regular target
-# in the parent build tree rather than a separate cmake project. This way it
-# automatically inherits every toolchain detail the parent uses to build
-# libhegel.a (compiler, CMAKE_CXX_FLAGS, macOS arch/sysroot, etc.), and there
-# is no ABI mismatch when the parent is configured with e.g.
-# -DCMAKE_CXX_FLAGS="-stdlib=libc++". At test time TempCppProject overwrites
-# the source file and invokes `cmake --build --target subject`.
-set(HEGEL_TEMP_PROJECT_MAIN_CPP
-    ${CMAKE_CURRENT_BINARY_DIR}/temp_project_subject/main.cpp)
-if(NOT EXISTS ${HEGEL_TEMP_PROJECT_MAIN_CPP})
-    file(WRITE ${HEGEL_TEMP_PROJECT_MAIN_CPP}
-        "// Overwritten at test runtime by TempCppProject.\n"
-        "int main() { return 0; }\n")
-endif()
-add_executable(subject EXCLUDE_FROM_ALL ${HEGEL_TEMP_PROJECT_MAIN_CPP})
+add_executable(subject subject_main.cpp)
 target_link_libraries(subject PRIVATE hegel)
 
 add_executable(test_output test_output.cpp)
 target_link_libraries(test_output
     PRIVATE hegel_tests_common GTest::gtest_main)
+add_dependencies(test_output subject)
 target_compile_definitions(test_output
     PRIVATE
-        HEGEL_TEMP_PROJECT_MAIN_CPP="${HEGEL_TEMP_PROJECT_MAIN_CPP}"
-        HEGEL_TEMP_PROJECT_SUBJECT_BIN="$<TARGET_FILE:subject>"
-        HEGEL_TEMP_PROJECT_BUILD_DIR="${CMAKE_BINARY_DIR}"
-        HEGEL_TEMP_PROJECT_CMAKE_EXE="${CMAKE_COMMAND}"
+        HEGEL_SUBJECT_BIN="$<TARGET_FILE:subject>"
 )
-# Each TEST() in test_output.cpp rewrites the shared subject main.cpp and
-# rebuilds the `subject` target, so they cannot run concurrently.
-# RESOURCE_LOCK serializes them across ctest -j while still allowing
-# parallelism with other test binaries.
-gtest_discover_tests(test_output PROPERTIES RESOURCE_LOCK temp_project_subject)
+gtest_discover_tests(test_output)
 
 add_executable(test_gtest test_gtest.cpp)
 target_link_libraries(test_gtest

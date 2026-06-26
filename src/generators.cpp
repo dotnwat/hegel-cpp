@@ -343,7 +343,11 @@ namespace hegel::generators {
         hegel::internal::json::json response =
             internal::generate_from_schema(schema, *tc_);
         if (!response.contains("result")) {
+            // The engine always returns a "result"; a miss would be an engine
+            // bug, not reachable from a test.
+            // GCOVR_EXCL_START
             throw std::runtime_error("Engine response missing 'result' field");
+            // GCOVR_EXCL_STOP
         }
         return ImplUtil::raw(response["result"]).get<uint32_t>();
     }

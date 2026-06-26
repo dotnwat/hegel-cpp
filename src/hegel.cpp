@@ -227,13 +227,19 @@ namespace hegel {
                 impl::run_result_failure(ctx, result, i);
             const char* blob = impl::failure_reproduction_blob(ctx, failure);
             if (blob == nullptr) {
-                continue;
+                // GCOVR_EXCL_START
+                throw std::runtime_error(
+                    "internal error: failure has no reproduction blob");
+                // GCOVR_EXCL_STOP
             }
             BodyOutcome outcome =
                 replay_failure(ctx, s, blob, settings.verbosity, test_fn);
             if (outcome.status != HEGEL_STATUS_INTERESTING) {
-                // The engine's counterexample no longer fails on replay.
+                // Replay non-determinism (flaky); cannot be reproduced
+                // deterministically from a test.
+                // GCOVR_EXCL_START
                 throw std::runtime_error(flaky_diagnostic);
+                // GCOVR_EXCL_STOP
             }
             // temporary - only report one failure
             if (message.empty() && !outcome.message.empty()) {

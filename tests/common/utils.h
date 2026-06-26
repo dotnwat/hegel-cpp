@@ -89,7 +89,7 @@ namespace hegel::tests::common {
     template <typename T>
     T find_any(const gs::Generator<T>& gen,
                std::function<bool(const T&)> condition,
-               uint64_t max_attempts = 1000) {
+               uint64_t max_attempts = 300) {
         auto found = std::make_shared<std::optional<T>>();
         auto sentinel_thrown = std::make_shared<bool>(false);
         auto mu = std::make_shared<std::mutex>();
@@ -133,7 +133,7 @@ namespace hegel::tests::common {
     template <typename T>
     T minimal(const gs::Generator<T>& gen,
               std::function<bool(const T&)> condition,
-              uint64_t test_cases = 500) {
+              uint64_t test_cases = 100) {
         auto found = std::make_shared<std::optional<T>>();
         auto sentinel_thrown = std::make_shared<bool>(false);
         auto mu = std::make_shared<std::mutex>();

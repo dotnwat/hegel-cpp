@@ -218,8 +218,12 @@ namespace hegel::internal {
             throw HegelReject();
         }
         if (rc != HEGEL_OK) {
+            // Engine-level failure; not reachable without fault injection into
+            // the C ABI.
+            // GCOVR_EXCL_START
             throw std::runtime_error("hegel_generate failed: " +
                                      impl::last_error(ctx));
+            // GCOVR_EXCL_STOP
         }
 
         nlohmann::json value = impl::protocol::cbor_decode(out_value, out_len);

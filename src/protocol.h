@@ -24,21 +24,10 @@ namespace hegel::impl::protocol {
                 convert_tagged_strings(el);
             return;
         }
-        if (v.is_object()) {
-            for (auto& [key, val] : v.items())
-                convert_tagged_strings(val);
-        }
     }
 
     inline std::vector<uint8_t> cbor_encode(const nlohmann::json& v) {
         return nlohmann::json::to_cbor(v);
-    }
-
-    inline nlohmann::json cbor_decode(const std::vector<uint8_t>& bytes) {
-        auto result = nlohmann::json::from_cbor(
-            bytes, true, true, nlohmann::json::cbor_tag_handler_t::store);
-        convert_tagged_strings(result);
-        return result;
     }
 
     inline nlohmann::json cbor_decode(const uint8_t* data, size_t len) {

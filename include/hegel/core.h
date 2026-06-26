@@ -66,8 +66,12 @@ namespace hegel::generators {
             hegel::internal::json::json response =
                 internal::generate_from_schema(schema, tc);
             if (!response.contains("result")) {
+                // The engine always returns a "result"; a miss would be an
+                // engine bug, not reachable from a test.
+                // GCOVR_EXCL_START
                 throw std::runtime_error(
                     "engine response missing 'result' field");
+                // GCOVR_EXCL_STOP
             }
             return parse(response["result"]);
         }
@@ -108,12 +112,21 @@ namespace hegel::generators {
         virtual std::optional<BasicGenerator<T>> as_basic() const {
             return std::nullopt;
         }
+        
+        const std::optional<BasicGenerator<T>>& basic() const {
+            if (!basic_cache_) {
+                basic_cache_ =
+                    std::make_shared<const std::optional<BasicGenerator<T>>>(
+                        as_basic());
+            }
+            return *basic_cache_;
+        }
 
         // Get the CBOR schema for this generator, if any. The default
-        // derives it from as_basic(); override only if you need to report a
+        // derives it from basic(); override only if you need to report a
         // schema without also providing a parser.
         virtual std::optional<hegel::internal::json::json> schema() const {
-            auto b = as_basic();
+            const auto& b = basic();
             return b ? std::optional{b->schema} : std::nullopt;
         }
 
@@ -121,12 +134,20 @@ namespace hegel::generators {
         // available; generators without a basic form
         // must override this to provide a client-side fallback.
         virtual T do_draw(const TestCase& tc) const {
-            if (auto b = as_basic())
+            if (const auto& b = basic())
                 return b->do_draw(tc);
+            // Every concrete generator provides as_basic() or overrides
+            // do_draw(), so this base path is never taken.
+            // GCOVR_EXCL_START
             throw std::logic_error(
                 "IGenerator has no basic form and no do_draw override");
+            // GCOVR_EXCL_STOP
         }
         /// @endcond
+
+      private:
+        mutable std::shared_ptr<const std::optional<BasicGenerator<T>>>
+            basic_cache_;
     };
 
     /**
@@ -326,7 +347,7 @@ namespace hegel::generators {
         }
 
         U do_draw(const TestCase& tc) const override {
-            if (auto basic = as_basic()) {
+            if (const auto& basic = this->basic()) {
                 return basic->do_draw(tc);
             }
             return f_(source_->do_draw(tc));

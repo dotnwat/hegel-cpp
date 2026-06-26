@@ -85,7 +85,7 @@ namespace hegel::generators {
         }
 
         std::vector<T> do_draw(const TestCase& tc) const override {
-            if (auto basic = as_basic()) {
+            if (const auto& basic = this->basic()) {
                 return basic->do_draw(tc);
             }
             size_t max_size = params_.max_size.value_or(100);
@@ -144,7 +144,7 @@ namespace hegel::generators {
         }
 
         std::set<T> do_draw(const TestCase& tc) const override {
-            if (auto basic = as_basic()) {
+            if (const auto& basic = this->basic()) {
                 return basic->do_draw(tc);
             }
             size_t max_size = params_.max_size.value_or(20);
@@ -212,7 +212,7 @@ namespace hegel::generators {
         }
 
         std::map<K, V> do_draw(const TestCase& tc) const override {
-            if (auto basic = as_basic()) {
+            if (const auto& basic = this->basic()) {
                 return basic->do_draw(tc);
             }
             size_t max_size = params_.max_size.value_or(20);
@@ -373,7 +373,7 @@ namespace hegel::generators {
         }
 
         ResultTuple do_draw(const TestCase& tc) const override {
-            if (auto basic = as_basic()) {
+            if (const auto& basic = this->basic()) {
                 return basic->do_draw(tc);
             }
             return detail::draw_tuple_impl<ResultTuple>(

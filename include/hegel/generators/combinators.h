@@ -85,7 +85,7 @@ namespace hegel::generators {
         }
 
         T do_draw(const TestCase& tc) const override {
-            if (auto basic = as_basic()) {
+            if (const auto& basic = this->basic()) {
                 return basic->do_draw(tc);
             }
             auto idx = integers<size_t>(
@@ -273,7 +273,7 @@ namespace hegel::generators {
         }
 
         Result do_draw(const TestCase& tc) const override {
-            if (auto basic = as_basic()) {
+            if (const auto& basic = this->basic()) {
                 return basic->do_draw(tc);
             }
             constexpr size_t N = sizeof...(Ts);
@@ -327,7 +327,7 @@ namespace hegel::generators {
         }
 
         std::optional<T> do_draw(const TestCase& tc) const override {
-            if (auto basic = as_basic()) {
+            if (const auto& basic = this->basic()) {
                 return basic->do_draw(tc);
             }
             bool is_none = booleans().do_draw(tc);

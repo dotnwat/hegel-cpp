@@ -91,6 +91,19 @@ TEST(CompositeFallback, SampledFromStringLiterals) {
         fast());
 }
 
+TEST(CompositeFallback, UnsatisfiableUniqueMapIsRejected) {
+    hegel::test(
+        [](hegel::TestCase& tc) {
+            // Only two possible keys (0, 1) but at least five required.
+            (void)tc.draw(
+                gs::maps(gs::integers<int>({.min_value = 0, .max_value = 1}),
+                         gs::integers<int>(), {.min_size = 5}));
+        },
+        hegel::Settings{.test_cases = 10,
+                        .database = hegel::Database::disabled(),
+                        .suppress_health_check = hegel::all_health_checks()});
+}
+
 int main(int argc, char** argv) {
     ::testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();
