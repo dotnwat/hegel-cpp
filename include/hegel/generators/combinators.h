@@ -14,30 +14,22 @@ namespace hegel::generators {
     // does the lookup.
     template <typename T> class SampledFromGenerator : public IGenerator<T> {
       public:
-        explicit SampledFromGenerator(std::vector<T> elements)
-            : elements_(std::move(elements)) {
-            if (elements_.empty()) {
+        explicit SampledFromGenerator(std::vector<T> elements) {
+            if (elements.empty()) {
                 throw std::invalid_argument(
                     "sampled_from requires a non-empty vector");
             }
-        }
-
-        std::optional<BasicGenerator<T>> as_basic() const override {
             hegel::internal::json::json schema = {
                 {"type", "integer"},
                 {"min_value", 0},
-                {"max_value", static_cast<int64_t>(elements_.size() - 1)}};
-            auto elements = elements_;
-            return BasicGenerator<T>{
+                {"max_value", static_cast<int64_t>(elements.size() - 1)}};
+            this->basic_.emplace(BasicGenerator<T>{
                 std::move(schema),
                 [elements = std::move(elements)](
                     const hegel::internal::json::json_raw_ref& raw) {
                     return elements[static_cast<size_t>(raw.get_int64_t())];
-                }};
+                }});
         }
-
-      private:
-        std::vector<T> elements_;
     };
 
     // Concrete IGenerator for one_of(). Schema path requires every branch
@@ -50,23 +42,17 @@ namespace hegel::generators {
                 throw std::invalid_argument(
                     "one_of requires a non-empty vector of generators");
             }
-        }
-
-        std::optional<BasicGenerator<T>> as_basic() const override {
             std::vector<BasicGenerator<T>> basics;
             basics.reserve(gens_.size());
             for (const auto& gen : gens_) {
-                auto b = gen.as_basic();
+                const auto& b = gen.basic();
                 if (!b)
-                    return std::nullopt;
-                basics.push_back(std::move(*b));
+                    return;
+                basics.push_back(*b);
             }
 
-            // The protocol guarantees `one_of` responses arrive as
-            // `[index, value]`, so the schema is just the raw children
-            // without any per-branch tagging. The index tells us which
-            // branch's parser (which carries any per-branch transforms
-            // composed in via map()) to apply to the value.
+            // `one_of` responses arrive as `[index, value]`; the index selects
+            // which branch's parser to apply.
             hegel::internal::json::json children =
                 hegel::internal::json::json::array();
             for (const auto& b : basics) {
@@ -75,13 +61,13 @@ namespace hegel::generators {
             hegel::internal::json::json schema = {{"type", "one_of"},
                                                   {"generators", children}};
 
-            return BasicGenerator<T>{
+            this->basic_.emplace(BasicGenerator<T>{
                 std::move(schema),
                 [basics = std::move(basics)](
                     const hegel::internal::json::json_raw_ref& raw) -> T {
                     size_t idx = static_cast<size_t>(raw[0].get_int64_t());
                     return basics[idx].parse_raw(raw[1]);
-                }};
+                }});
         }
 
         T do_draw(const TestCase& tc) const override {
@@ -230,22 +216,16 @@ namespace hegel::generators {
         using Result = std::variant<Ts...>;
 
         explicit VariantGenerator(Generator<Ts>... gens)
-            : gens_(std::move(gens)...) {}
-
-        std::optional<BasicGenerator<Result>> as_basic() const override {
+            : gens_(std::move(gens)...) {
             auto basics = std::apply(
-                [](const auto&... g) {
-                    return std::make_tuple(g.as_basic()...);
-                },
+                [](const auto&... g) { return std::make_tuple(g.basic()...); },
                 gens_);
             bool all_basic = std::apply(
                 [](const auto&... b) { return (b.has_value() && ...); },
                 basics);
             if (!all_basic)
-                return std::nullopt;
+                return;
 
-            // engine returns `[index, value]` for `one_of` schemas, so we
-            // can emit the children directly without per-branch tagging.
             hegel::internal::json::json children =
                 hegel::internal::json::json::array();
             std::apply(
@@ -261,7 +241,7 @@ namespace hegel::generators {
                 [](const auto&... b) { return std::make_tuple(b->parse...); },
                 basics);
 
-            return BasicGenerator<Result>{
+            this->basic_.emplace(BasicGenerator<Result>{
                 std::move(schema),
                 [parsers = std::move(parsers)](
                     const hegel::internal::json::json_raw_ref& raw) -> Result {
@@ -269,7 +249,7 @@ namespace hegel::generators {
                     return detail::parse_variant_impl<Result,
                                                       decltype(parsers)>(
                         parsers, idx, raw[1]);
-                }};
+                }});
         }
 
         Result do_draw(const TestCase& tc) const override {
@@ -294,13 +274,10 @@ namespace hegel::generators {
     template <typename T>
     class OptionalGenerator : public IGenerator<std::optional<T>> {
       public:
-        explicit OptionalGenerator(Generator<T> gen) : gen_(std::move(gen)) {}
-
-        std::optional<BasicGenerator<std::optional<T>>>
-        as_basic() const override {
-            auto basic = gen_.as_basic();
+        explicit OptionalGenerator(Generator<T> gen) : gen_(std::move(gen)) {
+            const auto& basic = gen_.basic();
             if (!basic)
-                return std::nullopt;
+                return;
 
             hegel::internal::json::json generators =
                 hegel::internal::json::json::array();
@@ -311,19 +288,17 @@ namespace hegel::generators {
                                                   {"generators", generators}};
 
             auto parse = basic->parse;
-            return BasicGenerator<std::optional<T>>{
+            this->basic_.emplace(BasicGenerator<std::optional<T>>{
                 std::move(schema),
                 [parse = std::move(parse)](
                     const hegel::internal::json::json_raw_ref& raw)
                     -> std::optional<T> {
-                    // `one_of` responses arrive as `[index, value]`. Index
-                    // 0 is the null branch, index 1 is the inner value.
                     size_t idx = static_cast<size_t>(raw[0].get_int64_t());
                     if (idx == 0) {
                         return std::nullopt;
                     }
                     return parse(raw[1]);
-                }};
+                }});
         }
 
         std::optional<T> do_draw(const TestCase& tc) const override {

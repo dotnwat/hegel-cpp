@@ -102,42 +102,22 @@ namespace hegel::generators {
         virtual ~IGenerator() = default;
 
         /// @cond INTERNAL
-        // Returns a BasicGenerator<T> (schema + client-side parser) if this
-        // generator can be driven through the Hegel protocol as a single
-        // schema request. Composed generators (vectors, one_of, ...) use this
-        // to build compound schemas while keeping per-element parsing
-        // client-side; map() uses it to preserve schemas through
-        // transformations. Defaults to nullopt for generators whose
-        // production is fully client-side (filter, flat_map, user closures).
-        virtual std::optional<BasicGenerator<T>> as_basic() const {
-            return std::nullopt;
-        }
-        
-        const std::optional<BasicGenerator<T>>& basic() const {
-            if (!basic_cache_) {
-                basic_cache_ =
-                    std::make_shared<const std::optional<BasicGenerator<T>>>(
-                        as_basic());
-            }
-            return *basic_cache_;
+        // Schema-backed generators build basic_ (schema + parser) in their
+        // constructor; composites build theirs from their children's basic().
+        // Generators with no schema path (filter, flat_map, user closures)
+        // leave it empty and override do_draw().
+        virtual const std::optional<BasicGenerator<T>>& basic() const {
+            return basic_;
         }
 
-        // Get the CBOR schema for this generator, if any. The default
-        // derives it from basic(); override only if you need to report a
-        // schema without also providing a parser.
         virtual std::optional<hegel::internal::json::json> schema() const {
             const auto& b = basic();
             return b ? std::optional{b->schema} : std::nullopt;
         }
 
-        // Produce a value. The default delegates to the basic form when
-        // available; generators without a basic form
-        // must override this to provide a client-side fallback.
         virtual T do_draw(const TestCase& tc) const {
             if (const auto& b = basic())
                 return b->do_draw(tc);
-            // Every concrete generator provides as_basic() or overrides
-            // do_draw(), so this base path is never taken.
             // GCOVR_EXCL_START
             throw std::logic_error(
                 "IGenerator has no basic form and no do_draw override");
@@ -145,9 +125,8 @@ namespace hegel::generators {
         }
         /// @endcond
 
-      private:
-        mutable std::shared_ptr<const std::optional<BasicGenerator<T>>>
-            basic_cache_;
+      protected:
+        std::optional<BasicGenerator<T>> basic_;
     };
 
     /**
@@ -192,8 +171,8 @@ namespace hegel::generators {
             return inner_->schema();
         }
 
-        std::optional<BasicGenerator<T>> as_basic() const override {
-            return inner_->as_basic();
+        const std::optional<BasicGenerator<T>>& basic() const override {
+            return inner_->basic();
         }
         /// @endcond
 
@@ -337,13 +316,10 @@ namespace hegel::generators {
       public:
         MappedGenerator(std::shared_ptr<IGenerator<T>> source,
                         std::function<U(T)> f)
-            : source_(std::move(source)), f_(std::move(f)) {}
-
-        std::optional<BasicGenerator<U>> as_basic() const override {
-            auto basic = source_->as_basic();
-            if (!basic)
-                return std::nullopt;
-            return basic->map(f_);
+            : source_(std::move(source)), f_(std::move(f)) {
+            if (const auto& b = source_->basic()) {
+                this->basic_.emplace(b->map(f_));
+            }
         }
 
         U do_draw(const TestCase& tc) const override {

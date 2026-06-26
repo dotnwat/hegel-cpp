@@ -21,19 +21,12 @@ namespace hegel::generators {
     // for any T without requiring T to be JSON-serializable.
     template <typename T> class JustGenerator : public IGenerator<T> {
       public:
-        explicit JustGenerator(T value) : value_(std::move(value)) {}
-
-        std::optional<BasicGenerator<T>> as_basic() const override {
-            T v = value_;
-            return BasicGenerator<T>{
+        explicit JustGenerator(T value) {
+            this->basic_.emplace(BasicGenerator<T>{
                 {{"type", "constant"}, {"value", nullptr}},
-                [v = std::move(v)](const hegel::internal::json::json_raw_ref&) {
-                    return v;
-                }};
+                [v = std::move(value)](
+                    const hegel::internal::json::json_raw_ref&) { return v; }});
         }
-
-      private:
-        T value_;
     };
     /// @endcond
 
