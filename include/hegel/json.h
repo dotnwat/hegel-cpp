@@ -35,13 +35,6 @@ namespace hegel::internal::json {
 
         json_raw_ref& operator=(const size_t& other);
         json_raw_ref& operator=(const double& other);
-        json_raw_ref& operator=(const std::nullptr_t& other);
-        json_raw_ref& operator=(bool other);
-        json_raw_ref& operator=(const std::string& other);
-        json_raw_ref& operator=(const json& other);
-#ifdef __APPLE__
-        json_raw_ref& operator=(const uint64_t& other);
-#endif
 
         json_raw_ref operator[](size_t index) const;
 
@@ -68,32 +61,17 @@ namespace hegel::internal::json {
         json(const unsigned long init);
 #endif
         json(const bool init);
-        json(const double init);
         json(const std::string& init);
         json(std::nullptr_t init = nullptr);
-        json(const json_raw_ref& init);
         ~json();
 
         json_raw_ref operator[](const std::string& key);
-
-        json& operator=(json other) noexcept;
-
-        std::string value(const std::string& key,
-                          const std::string& default_value);
-        uint32_t value(const std::string& key, const uint32_t& default_value);
 
         bool contains(const std::string& key);
 
         static json array(initializer_list_t init = {});
         void push_back(json&& val);
         void push_back(const json& val);
-        void push_back(const std::string& val);
-
-        std::string dump() const;
-
-        std::vector<unsigned char>& get_binary();
-
-        static json parse(const char* arg);
 
       private:
         std::unique_ptr<json_holder> impl;
@@ -102,10 +80,6 @@ namespace hegel::internal::json {
 
     class json_ref {
       public:
-        json_ref(json&& value) : owned_value(std::move(value)) {}
-
-        json_ref(const json& value) : value_ref(&value) {}
-
         json_ref(std::initializer_list<json_ref> init) : owned_value(init) {}
 
         template <class... Args,
@@ -120,13 +94,10 @@ namespace hegel::internal::json {
         json_ref& operator=(json_ref&&) = delete;
         ~json_ref() = default;
 
-        json const& operator*() const {
-            return value_ref ? *value_ref : owned_value;
-        }
+        json const& operator*() const { return owned_value; }
 
       private:
-        mutable json owned_value = nullptr;
-        json const* value_ref = nullptr;
+        json owned_value = nullptr;
     };
 } // namespace hegel::internal::json
 /// @endcond

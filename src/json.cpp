@@ -59,31 +59,12 @@ namespace hegel::internal::json {
         : impl(new json_holder(static_cast<uint64_t>(init))) {}
 #endif
     json::json(const bool init) : impl(new json_holder(init)) {}
-    json::json(const double init) : impl(new json_holder(init)) {}
     json::json(const std::string& init) : impl(new json_holder(init)) {}
     json::json(std::nullptr_t init) : impl(new json_holder(init)) {}
-    json::json(const json_raw_ref& init)
-        : impl(new json_holder(ImplUtil::raw(init))) {}
     json::~json() = default;
 
     json_raw_ref json::operator[](const std::string& key) {
         return json_raw_ref(new json_ref_holder(impl->data[key]));
-    }
-
-    json& json::operator=(json other) noexcept {
-        if (this != &other) {
-            impl->operator=(*other.impl);
-        }
-        return *this;
-    }
-
-    std::string json::value(const std::string& key,
-                            const std::string& default_value) {
-        return impl->data.value(key, default_value);
-    }
-    uint32_t json::value(const std::string& key,
-                         const uint32_t& default_value) {
-        return impl->data.value(key, default_value);
     }
 
     bool json::contains(const std::string& key) {
@@ -107,18 +88,6 @@ namespace hegel::internal::json {
     }
     void json::push_back(const json& val) {
         impl->data.push_back(val.impl->data);
-    }
-    void json::push_back(const std::string& val) { impl->data.push_back(val); }
-
-    std::string json::dump() const { return impl->data.dump(); }
-
-    std::vector<unsigned char>& json::get_binary() {
-        return impl->data.get_binary();
-    }
-
-    json json::parse(const char* arg) {
-        nlohmann::json result = nlohmann::json::parse(arg);
-        return ImplUtil::create(result);
     }
 
     json_raw_ref::json_raw_ref(json_ref_holder* ref_) : ref(ref_) {}
@@ -146,33 +115,10 @@ namespace hegel::internal::json {
         ref->data = other;
         return *this;
     }
-    json_raw_ref& json_raw_ref::operator=(const std::nullptr_t& other) {
-        ref->data = other;
-        return *this;
-    }
     json_raw_ref& json_raw_ref::operator=(const double& other) {
         ref->data = other;
         return *this;
     }
-    json_raw_ref& json_raw_ref::operator=(bool other) {
-        ref->data = other;
-        return *this;
-    }
-    json_raw_ref& json_raw_ref::operator=(const std::string& other) {
-        ref->data = other;
-        return *this;
-    }
-    json_raw_ref& json_raw_ref::operator=(const json& other) {
-        ref->data = ImplUtil::raw(other);
-        return *this;
-    }
-
-#ifdef __APPLE__
-    json_raw_ref& json_raw_ref::operator=(const uint64_t& other) {
-        ref->data = other;
-        return *this;
-    }
-#endif
 
     json_raw_ref json_raw_ref::operator[](size_t index) const {
         return json_raw_ref(new json_ref_holder(ref->data[index]));
