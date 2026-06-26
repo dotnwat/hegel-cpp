@@ -98,11 +98,21 @@ check-coverage:
     cmake -B build/coverage -DHEGEL_COVERAGE=ON ${CMAKE_FLAGS:-}
     cmake --build build/coverage -j{{ jobs }}
 
-    llvm_profdata="$(command -v llvm-profdata 2>/dev/null || true)"
-    llvm_cov="$(command -v llvm-cov 2>/dev/null || true)"
+    # LLVM source-based coverage needs llvm-profdata/llvm-cov matching the
+    # clang that built the instrumented binaries. On Linux these are versioned
+    # (llvm-cov-18); derive the suffix from CXX (e.g. clang++-18 -> -18).
+    cxx="${CXX:-c++}"
+    suffix=""
+    case "$cxx" in *clang++-*) suffix="-${cxx##*clang++-}";; esac
+    llvm_profdata="$(command -v "llvm-profdata$suffix" llvm-profdata 2>/dev/null | head -1 || true)"
+    llvm_cov="$(command -v "llvm-cov$suffix" llvm-cov 2>/dev/null | head -1 || true)"
     if { [ -z "$llvm_profdata" ] || [ -z "$llvm_cov" ]; } && command -v xcrun >/dev/null 2>&1; then
         llvm_profdata="${llvm_profdata:-$(xcrun --find llvm-profdata)}"
         llvm_cov="${llvm_cov:-$(xcrun --find llvm-cov)}"
+    fi
+    if [ -z "$llvm_profdata" ] || [ -z "$llvm_cov" ]; then
+        echo "error: llvm-profdata/llvm-cov not found (need clang + llvm)" >&2
+        exit 1
     fi
 
     prof_dir="$PWD/build/coverage/profraw"
@@ -112,9 +122,15 @@ check-coverage:
 
     "$llvm_profdata" merge -sparse "$prof_dir"/*.profraw \
         -o build/coverage/cov.profdata
+    # Collect the instrumented test executables. `file ... executable` matches
+    # both Mach-O and ELF (PIE) executables and excludes shared libraries,
+    # without relying on a non-portable `find -perm` mode.
     objs=(); while IFS= read -r b; do objs+=("$b"); done < <(
-        find build/coverage/tests -type f -perm +111 -exec sh -c \
-            'file -b "$1" | grep -q "Mach-O.*executable\|ELF.*executable"' _ {} \; -print)
+        find build/coverage/tests -type f -exec sh -c \
+            'file -b "$1" | grep -q executable' _ {} \; -print)
+    if [ "${#objs[@]}" -eq 0 ]; then
+        echo "error: no instrumented test binaries found" >&2; exit 1
+    fi
     obj_args=(); for o in "${objs[@]:1}"; do obj_args+=(-object "$o"); done
     "$llvm_cov" export -format=lcov \
         -instr-profile=build/coverage/cov.profdata \

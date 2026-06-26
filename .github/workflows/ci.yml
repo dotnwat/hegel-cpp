@@ -155,11 +155,19 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Install clang + llvm
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang-18 llvm-18
+
       - uses: ./.github/actions/install-tools
         with:
           tools: just uv
 
       - name: Enforce coverage floor
+        env:
+          CC: clang-18
+          CXX: clang++-18
         run: just check-coverage
 
   nix:
