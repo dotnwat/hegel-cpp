@@ -97,27 +97,31 @@ check-coverage:
     set -euo pipefail
     cmake -B build/coverage -DHEGEL_COVERAGE=ON ${CMAKE_FLAGS:-}
     cmake --build build/coverage -j{{ jobs }}
-    ctest --test-dir build/coverage/tests --output-on-failure -j{{ jobs }}
-    # Match the gcov tool to the compiler that produced the .gcda data.
-    cxx="${CXX:-c++}"
-    if "$cxx" --version 2>/dev/null | grep -qi clang; then
-        gcov_bin="$(command -v llvm-cov llvm-cov-18 2>/dev/null | head -1 || true)"
-        if [ -z "$gcov_bin" ] && command -v xcrun >/dev/null 2>&1; then
-            gcov_bin="$(xcrun --find llvm-cov)"
-        fi
-        gcov_tool="${gcov_bin:-llvm-cov} gcov"
-    else
-        ver="${cxx##*-}"
-        gcov_tool="gcov"
-        if [[ "$ver" =~ ^[0-9]+$ ]] && command -v "gcov-$ver" >/dev/null 2>&1; then
-            gcov_tool="gcov-$ver"
-        fi
+
+    llvm_profdata="$(command -v llvm-profdata 2>/dev/null || true)"
+    llvm_cov="$(command -v llvm-cov 2>/dev/null || true)"
+    if { [ -z "$llvm_profdata" ] || [ -z "$llvm_cov" ]; } && command -v xcrun >/dev/null 2>&1; then
+        llvm_profdata="${llvm_profdata:-$(xcrun --find llvm-profdata)}"
+        llvm_cov="${llvm_cov:-$(xcrun --find llvm-cov)}"
     fi
-    uvx gcovr --root . --gcov-executable "$gcov_tool" \
-        --filter 'src/' --filter 'include/hegel/' \
-        --exclude-unreachable-branches \
-        --json build/coverage/coverage.json build/coverage
-    python3 scripts/check-coverage.py build/coverage/coverage.json
+
+    prof_dir="$PWD/build/coverage/profraw"
+    rm -rf "$prof_dir"; mkdir -p "$prof_dir"
+    export LLVM_PROFILE_FILE="$prof_dir/cov-%p-%m.profraw"
+    ctest --test-dir build/coverage/tests --output-on-failure -j{{ jobs }}
+
+    "$llvm_profdata" merge -sparse "$prof_dir"/*.profraw \
+        -o build/coverage/cov.profdata
+    objs=(); while IFS= read -r b; do objs+=("$b"); done < <(
+        find build/coverage/tests -type f -perm +111 -exec sh -c \
+            'file -b "$1" | grep -q "Mach-O.*executable\|ELF.*executable"' _ {} \; -print)
+    obj_args=(); for o in "${objs[@]:1}"; do obj_args+=(-object "$o"); done
+    "$llvm_cov" export -format=lcov \
+        -instr-profile=build/coverage/cov.profdata \
+        "${objs[0]}" "${obj_args[@]}" \
+        "$PWD/src" "$PWD/include/hegel" \
+        > build/coverage/coverage.lcov
+    python3 scripts/check-coverage.py build/coverage/coverage.lcov
 
 check-lint: check-format check-tidy
 

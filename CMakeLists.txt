@@ -26,8 +26,8 @@ option(HEGEL_REFLECTION "Enable reflect-cpp powered default_generator (requires 
 set(CMAKE_CXX_STANDARD 20)
 
 if(HEGEL_COVERAGE)
-    add_compile_options(--coverage -fprofile-arcs -ftest-coverage)
-    add_link_options(--coverage)
+    add_compile_options(-fprofile-instr-generate -fcoverage-mapping)
+    add_link_options(-fprofile-instr-generate)
 endif()
 
 # Acquire libhegel (Hegel's native engine, called in-process via its C ABI)

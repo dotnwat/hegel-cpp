@@ -5,9 +5,9 @@ Checks over the library sources (src/, include/hegel/):
 
 1. Coverage gate: every line that is NOT excluded from coverage must be
    covered. Lines that carry no testable behaviour are tolerated without a
-   marker — purely structural lines (lone braces / punctuation, which gcov
-   attributes inconsistently) and unreachability statements (std::unreachable,
-   __builtin_unreachable, assert(false), abort()).
+   marker — purely structural lines (lone braces / punctuation and 
+   unreachability statements (std::unreachable, __builtin_unreachable, 
+   assert(false), abort()).
 
 2. Stale-exclusion check: an inline `// GCOVR_EXCL_LINE` on a line that is in
    fact covered is a failure — the marker should be removed (and the ratchet
@@ -24,7 +24,9 @@ Coverage is measured per source line: templates and inlined functions emit one
 record per instantiation, so a line is covered if ANY instantiation executed
 it (max count over records).
 
-Usage: check-coverage.py <gcovr-json>
+Input is an LCOV `.info` file produced by `llvm-cov export -format=lcov`.
+
+Usage: check-coverage.py <lcov-info>
 """
 
 from __future__ import annotations
@@ -41,8 +43,6 @@ SOURCE_GLOBS = ("*.cpp", "*.h")
 EXCL_LINE = re.compile(r"//\s*GCOVR_EXCL_LINE\b")
 EXCL_START = re.compile(r"//\s*GCOVR_EXCL_START\b")
 EXCL_STOP = re.compile(r"//\s*GCOVR_EXCL_STOP\b")
-# A line that is only braces / brackets / parens / separators carries no
-# testable behaviour; gcov reports such lines as uncovered inconsistently.
 STRUCTURAL = re.compile(r"^[{}()\[\];,\s]*$")
 # An unreachability statement: by construction it is never executed, so it is
 # allowed uncovered without a marker (C++ analog of unreachable!()/todo!()).
@@ -61,42 +61,75 @@ def _source_files() -> list[Path]:
             for p in sorted(d.rglob(g))]
 
 
+def excluded_lines(path: Path) -> set[int]:
+    """Line numbers under coverage-exclusion markers in one file.
+
+    Block START/STOP marker lines themselves are not counted; non-blank lines
+    inside a block are, as are inline // GCOVR_EXCL_LINE lines."""
+    out: set[int] = set()
+    in_block = False
+    for i, line in enumerate(path.read_text().splitlines(), 1):
+        if EXCL_START.search(line):
+            in_block = True
+            continue
+        if EXCL_STOP.search(line):
+            in_block = False
+            continue
+        if in_block:
+            if line.strip():
+                out.add(i)
+        elif EXCL_LINE.search(line):
+            out.add(i)
+    return out
+
+
 def count_excluded() -> int:
     """Count non-blank source lines under coverage-exclusion markers."""
-    total = 0
-    for path in _source_files():
-        in_block = False
-        for line in path.read_text().splitlines():
-            if EXCL_START.search(line):
-                in_block = True
-                continue
-            if EXCL_STOP.search(line):
-                in_block = False
-                continue
-            if in_block:
-                if line.strip():
-                    total += 1
-            elif EXCL_LINE.search(line):
-                total += 1
-    return total
+    return sum(len(excluded_lines(p)) for p in _source_files())
 
 
-def parse_per_line(gcovr_json: Path) -> dict[str, dict[int, tuple[int, bool]]]:
-    """file -> {line_number: (max_count_over_instantiations, excluded)}."""
-    data = json.loads(gcovr_json.read_text())
+def _relativize(sf: str) -> str | None:
+    """Map an LCOV SF: path to a repo-relative path under our source dirs,
+    or None if it falls outside src/ and include/hegel/."""
+    try:
+        rel = Path(sf).resolve().relative_to(Path.cwd().resolve())
+    except ValueError:
+        return None
+    s = rel.as_posix()
+    for d in SOURCE_DIRS:
+        if s == d.as_posix() or s.startswith(d.as_posix() + "/"):
+            return s
+    return None
+
+
+def parse_per_line(lcov_info: Path) -> dict[str, dict[int, tuple[int, bool]]]:
+    """file -> {line_number: (max_count_over_instantiations, excluded)}.
+
+    Reads an LCOV file: `SF:<path>` opens a record, `DA:<line>,<count>` gives a
+    per-line execution count (llvm-cov already aggregates instantiations, but we
+    still max over duplicate DA: entries defensively), `end_of_record` closes."""
     out: dict[str, dict[int, tuple[int, bool]]] = {}
-    for f in data.get("files", []):
-        agg: dict[int, tuple[int, bool]] = {}
-        for record in f.get("lines", []):
-            n = record["line_number"]
-            count = record.get("count", 0) or 0
-            excluded = bool(record.get("gcovr/excluded"))
+    cur: str | None = None
+    excl: set[int] = set()
+    for line in lcov_info.read_text().splitlines():
+        if line.startswith("SF:"):
+            cur = _relativize(line[3:].strip())
+            if cur is not None:
+                out.setdefault(cur, {})
+                p = Path(cur)
+                excl = excluded_lines(p) if p.exists() else set()
+        elif line.startswith("DA:") and cur is not None:
+            n_str, _, count_str = line[3:].partition(",")
+            n = int(n_str)
+            count = int(float(count_str.split(",")[0]))
+            agg = out[cur]
             if n in agg:
                 prev_count, prev_excl = agg[n]
-                agg[n] = (max(prev_count, count), prev_excl or excluded)
+                agg[n] = (max(prev_count, count), prev_excl)
             else:
-                agg[n] = (count, excluded)
-        out[f["file"]] = agg
+                agg[n] = (count, n in excl)
+        elif line.startswith("end_of_record"):
+            cur = None
     return out
 
 
@@ -174,7 +207,7 @@ def write_ratchet(excluded: int) -> None:
 
 def main() -> int:
     if len(sys.argv) != 2:
-        print("usage: check-coverage.py <gcovr-json>", file=sys.stderr)
+        print("usage: check-coverage.py <lcov-info>", file=sys.stderr)
         return 2
     parsed = parse_per_line(Path(sys.argv[1]))
     cache: dict[Path, list[str]] = {}
