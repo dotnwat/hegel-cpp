@@ -80,6 +80,7 @@ hegel_add_test(NAME test_hegel SOURCE test_hegel.cpp)
 hegel_add_test(NAME test_random SOURCE test_random.cpp)
 hegel_add_test(NAME test_no_nlohmann_include SOURCE test_no_nlohmann_include.cpp)
 hegel_add_test(NAME test_compose SOURCE test_compose.cpp)
+hegel_add_test(NAME test_composite_fallback SOURCE test_composite_fallback.cpp)
 hegel_add_test(NAME test_formats SOURCE test_formats.cpp)
 
 # default_generator is only available with reflection (C++20).

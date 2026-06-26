@@ -194,7 +194,9 @@ namespace hegel::generators {
                 return draw_variant_impl<Variant, GenTuple, I + 1>(gens, idx,
                                                                    tc);
             } else {
-                return Variant{};
+                // Unreachable: idx is always in [0, N), so an earlier branch
+                // matches before the recursion bottoms out.
+                return Variant{}; // GCOVR_EXCL_LINE
             }
         }
 
@@ -210,7 +212,9 @@ namespace hegel::generators {
                 return parse_variant_impl<Variant, Parsers, I + 1>(parsers, idx,
                                                                    raw);
             } else {
-                return Variant{};
+                // Unreachable: idx comes from the engine's [index, value] pair
+                // and is always a valid branch index in [0, N).
+                return Variant{}; // GCOVR_EXCL_LINE
             }
         }
 
