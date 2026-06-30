@@ -227,3 +227,29 @@ TEST(Settings, DatabaseReplaysFailure) {
 
     fs::remove_all(db_path);
 }
+
+// With Database::unset() the engine falls back to its own default `.hegel`
+// directory. Run inside a temporary working directory so the database
+// artifacts don't leak into the build tree.
+TEST(Settings, UnsetDatabaseUsesEngineDefault) {
+    namespace fs = std::filesystem;
+
+    fs::path work = fs::temp_directory_path() /
+                    ("hegel_unset_db_test_" + std::to_string(::getpid()));
+    fs::remove_all(work);
+    fs::create_directories(work);
+    fs::path prev = fs::current_path();
+    fs::current_path(work);
+
+    int count = 0;
+    hegel::test(
+        [&count](hegel::TestCase& tc) {
+            tc.draw(gs::integers<int>());
+            count++;
+        },
+        Settings{.test_cases = 5, .database = Database::unset()});
+
+    fs::current_path(prev);
+    fs::remove_all(work);
+    EXPECT_EQ(count, 5);
+}

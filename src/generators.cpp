@@ -220,8 +220,8 @@ namespace hegel::generators {
         return Generator<bool>(new BooleansGenerator());
     }
 
-    Generator<std::string> text(TextParams params) {
-        return Generator<std::string>(new TextGenerator(std::move(params)));
+    Generator<std::string> text(const TextParams& params) {
+        return Generator<std::string>(new TextGenerator(params));
     }
 
     Generator<std::string> characters(const CharactersParams& params) {

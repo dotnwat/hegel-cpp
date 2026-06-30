@@ -69,7 +69,7 @@ namespace hegel::generators {
      * @param params Length and character filtering constraints
      * @return Generator producing random strings
      */
-    Generator<std::string> text(TextParams params = {});
+    Generator<std::string> text(const TextParams& params = {});
 
     /**
      * @brief Generate single-character UTF-8 strings.
