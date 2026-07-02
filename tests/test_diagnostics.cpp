@@ -1,7 +1,6 @@
 #include <gtest/gtest.h>
 
 #include <cstdlib>
-#include <stdexcept>
 #include <string>
 
 #include <hegel/hegel.h>
@@ -96,11 +95,12 @@ TEST(Diagnostics, ProtocolDebugFromEnv) {
 }
 
 // A throw that isn't a std::exception exercises the catch(...) fallback, which
-// records the exception's type name as the failure origin.
+// records the exception's type name as the failure origin; the single-failure
+// re-raise then surfaces the original exception, not a wrapper.
 TEST(Diagnostics, NonStandardExceptionOrigin) {
     EXPECT_THROW(hegel::test([](hegel::TestCase&) { throw 42; },
                              with_verbosity(hegel::Verbosity::Quiet)),
-                 std::runtime_error);
+                 int);
 }
 
 TEST(Diagnostics, InternalExceptionMessages) {

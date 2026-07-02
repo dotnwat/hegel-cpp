@@ -19,6 +19,8 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <cstdio>
+#include <cstdlib>
 #include <cxxabi.h>
 #include <exception>
 #include <functional>
@@ -62,6 +64,7 @@ namespace hegel {
             hegel_status_t status;
             std::string origin;
             std::string message;
+            std::exception_ptr exception;
         };
 
         // Run the user's test body once and classify the outcome into the
@@ -76,15 +79,43 @@ namespace hegel {
             } catch (const internal::HegelReject&) {
                 return {HEGEL_STATUS_INVALID, "", ""};
             } catch (const std::exception& e) {
-                return {HEGEL_STATUS_INTERESTING, typeid(e).name(), e.what()};
+                return {HEGEL_STATUS_INTERESTING, typeid(e).name(), e.what(),
+                        std::current_exception()};
             } catch (...) {
+                // Only user code runs inside the try, so anything caught
+                // here is a test failure — including a foreign (non-C++)
+                // exception, for which the ABI can supply neither a
+                // type_info nor an exception_ptr. Substitute a described
+                // exception so the re-raise path stays valid.
                 const char* origin = "unknown_exception";
                 if (const std::type_info* tinfo =
                         abi::__cxa_current_exception_type()) {
                     origin = tinfo->name();
                 }
-                return {HEGEL_STATUS_INTERESTING, origin, ""};
+                std::exception_ptr exception = std::current_exception();
+                if (exception == nullptr) {
+                    // GCOVR_EXCL_START
+                    exception = std::make_exception_ptr(std::runtime_error(
+                        "test body raised a foreign (non-C++) exception"));
+                    // GCOVR_EXCL_STOP
+                }
+                return {HEGEL_STATUS_INTERESTING, origin, "", exception};
             }
+        }
+
+        // Demangle a typeid name for display, owning the malloc'd result.
+        // Every caller passes a valid mangling (a std::exception typeid), so
+        // the fallback covers only the demangler's allocation failure.
+        std::string demangle(const char* name) {
+            int status = 0;
+            char* demangled =
+                abi::__cxa_demangle(name, nullptr, nullptr, &status);
+            if (demangled == nullptr) {
+                return name; // GCOVR_EXCL_LINE
+            }
+            std::string out = demangled;
+            std::free(demangled);
+            return out;
         }
 
         void mark_complete(hegel_context_t* ctx, hegel_test_case_t* tc,
@@ -135,6 +166,8 @@ namespace hegel {
             impl::settings_set_seed(ctx, s, settings.seed.value_or(0),
                                     settings.seed.has_value());
             impl::settings_set_derandomize(ctx, s, settings.derandomize);
+            impl::settings_set_report_multiple_failures(
+                ctx, s, settings.report_multiple_failures);
 
             switch (settings.database.kind()) {
             case Database::Kind::Unset:
@@ -217,14 +250,14 @@ namespace hegel {
                                      (run_err ? run_err : "unknown error"));
         }
 
-        // Failed: replay each distinct counterexample to surface its notes and
-        // exception message, then raise.
+        // Failed: replay each distinct counterexample as its own block — a
+        // "Failure N:" header, then its notes, then its exception.
         size_t failure_count = impl::run_result_failure_count(ctx, result);
+        bool quiet = settings.verbosity == Verbosity::Quiet;
 
-        std::string message;
-        for (size_t i = 0; i < failure_count; i++) {
+        auto handle_failure = [&](size_t index) {
             const hegel_failure_t* failure =
-                impl::run_result_failure(ctx, result, i);
+                impl::run_result_failure(ctx, result, index);
             const char* blob = impl::failure_reproduction_blob(ctx, failure);
             if (blob == nullptr) {
                 // GCOVR_EXCL_START
@@ -235,20 +268,31 @@ namespace hegel {
             BodyOutcome outcome =
                 replay_failure(ctx, s, blob, settings.verbosity, test_fn);
             if (outcome.status != HEGEL_STATUS_INTERESTING) {
-                // Replay non-determinism (flaky); cannot be reproduced
-                // deterministically from a test.
                 // GCOVR_EXCL_START
                 throw std::runtime_error(flaky_diagnostic);
                 // GCOVR_EXCL_STOP
             }
-            // temporary - only report one failure
-            if (message.empty() && !outcome.message.empty()) {
-                message = outcome.message;
-            }
+            return outcome;
+        };
+
+        if (failure_count == 1) {
+            std::rethrow_exception(handle_failure(0).exception);
         }
 
-        throw std::runtime_error("\nHegel test failed" +
-                                 (message.empty() ? "" : ": " + message));
+        for (size_t i = 0; i < failure_count; i++) {
+            if (!quiet) {
+                std::fprintf(stderr, "Failure %zu:\n", i + 1);
+            }
+            BodyOutcome outcome = handle_failure(i);
+            if (!quiet && !outcome.message.empty()) {
+                std::fprintf(stderr, "Exception %s: %s\n",
+                             demangle(outcome.origin.c_str()).c_str(),
+                             outcome.message.c_str());
+            }
+        }
+        throw std::runtime_error("\nHegel test failed with " +
+                                 std::to_string(failure_count) +
+                                 " distinct failures");
     }
 
 } // namespace hegel
