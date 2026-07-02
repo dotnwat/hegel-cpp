@@ -92,6 +92,11 @@ namespace hegel::impl {
         check_rc(ctx, hegel_settings_set_derandomize(ctx, s, derandomize));
     }
 
+    void settings_set_report_multiple_failures(hegel_context_t* ctx,
+                                               hegel_settings_t* s, bool yes) {
+        check_rc(ctx, hegel_settings_set_report_multiple_failures(ctx, s, yes));
+    }
+
     void settings_set_database(hegel_context_t* ctx, hegel_settings_t* s,
                                const char* path) {
         check_rc(ctx, hegel_settings_set_database(ctx, s, path));

@@ -168,6 +168,11 @@ namespace hegel {
         /// detected, false otherwise.
         bool derandomize = internal::in_ci();
 
+        /// If true, keep generating after the first failure to surface
+        /// additional distinct bugs, and report all of them. If false (the
+        /// default), stop the run at the first failing example.
+        bool report_multiple_failures = false;
+
         /// Configure the Hegel database. See Database. Defaults to a database
         /// at `.hegel`, or disabled when a CI environment is detected.
         Database database =

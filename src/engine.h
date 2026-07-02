@@ -30,6 +30,8 @@ namespace hegel::impl {
                            uint64_t seed, bool has_seed);
     void settings_set_derandomize(hegel_context_t* ctx, hegel_settings_t* s,
                                   bool derandomize);
+    void settings_set_report_multiple_failures(hegel_context_t* ctx,
+                                               hegel_settings_t* s, bool yes);
     void settings_set_database(hegel_context_t* ctx, hegel_settings_t* s,
                                const char* path);
     void settings_set_suppress_health_check(hegel_context_t* ctx,

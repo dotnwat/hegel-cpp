@@ -66,6 +66,44 @@ namespace {
             no_database());
     }
 
+    // Two distinct bugs (different exception types, so different origins):
+    // even x >= 10 shrinks to 10, odd x >= 10 shrinks to 11.
+    void scenario_multiple_failures() {
+        hegel::test(
+            [](hegel::TestCase& tc) {
+                int32_t x = tc.draw(gs::integers<int32_t>());
+                if (x >= 10 && x % 2 == 0) {
+                    throw std::runtime_error("even bug with x=" +
+                                             std::to_string(x));
+                }
+                if (x >= 10 && x % 2 != 0) {
+                    throw std::logic_error("odd bug with x=" +
+                                           std::to_string(x));
+                }
+            },
+            hegel::Settings{.report_multiple_failures = true,
+                            .database = hegel::Database::disabled()});
+    }
+
+    // Same two bugs, but report_multiple_failures = false: the run stops at
+    // the first failing example and reports a single failure.
+    void scenario_multiple_failures_off() {
+        hegel::test(
+            [](hegel::TestCase& tc) {
+                int32_t x = tc.draw(gs::integers<int32_t>());
+                if (x >= 10 && x % 2 == 0) {
+                    throw std::runtime_error("even bug with x=" +
+                                             std::to_string(x));
+                }
+                if (x >= 10 && x % 2 != 0) {
+                    throw std::logic_error("odd bug with x=" +
+                                           std::to_string(x));
+                }
+            },
+            hegel::Settings{.report_multiple_failures = false,
+                            .database = hegel::Database::disabled()});
+    }
+
     // Surfaces the thrown exception's message; shrinks to x=7.
     void scenario_exception_message() {
         hegel::test(
@@ -94,6 +132,10 @@ int main(int argc, char** argv) {
         scenario_throw_int();
     } else if (scenario == "throw_custom") {
         scenario_throw_custom();
+    } else if (scenario == "multiple_failures") {
+        scenario_multiple_failures();
+    } else if (scenario == "multiple_failures_off") {
+        scenario_multiple_failures_off();
     } else if (scenario == "exception_message") {
         scenario_exception_message();
     } else {
