@@ -9,6 +9,14 @@
 
 #include <hegel/hegel.h>
 
+#ifdef HEGEL_COVERAGE_BUILD
+// LLVM's profile runtime writes coverage data from an exit handler, but every
+// failing scenario here exits via an uncaught exception -> std::terminate ->
+// abort(), which skips exit handlers. Flush manually before dying so these
+// scenarios contribute coverage like any in-process test.
+extern "C" int __llvm_profile_write_file(void);
+#endif
+
 namespace gs = hegel::generators;
 
 namespace {
@@ -124,23 +132,32 @@ int main(int argc, char** argv) {
         return 2;
     }
     const std::string scenario = argv[1];
-    if (scenario == "failing") {
-        scenario_failing();
-    } else if (scenario == "stable_origin") {
-        scenario_stable_origin();
-    } else if (scenario == "throw_int") {
-        scenario_throw_int();
-    } else if (scenario == "throw_custom") {
-        scenario_throw_custom();
-    } else if (scenario == "multiple_failures") {
-        scenario_multiple_failures();
-    } else if (scenario == "multiple_failures_off") {
-        scenario_multiple_failures_off();
-    } else if (scenario == "exception_message") {
-        scenario_exception_message();
-    } else {
-        std::fprintf(stderr, "unknown scenario: %s\n", argv[1]);
-        return 2;
+    try {
+        if (scenario == "failing") {
+            scenario_failing();
+        } else if (scenario == "stable_origin") {
+            scenario_stable_origin();
+        } else if (scenario == "throw_int") {
+            scenario_throw_int();
+        } else if (scenario == "throw_custom") {
+            scenario_throw_custom();
+        } else if (scenario == "multiple_failures") {
+            scenario_multiple_failures();
+        } else if (scenario == "multiple_failures_off") {
+            scenario_multiple_failures_off();
+        } else if (scenario == "exception_message") {
+            scenario_exception_message();
+        } else {
+            std::fprintf(stderr, "unknown scenario: %s\n", argv[1]);
+            return 2;
+        }
+    } catch (...) {
+#ifdef HEGEL_COVERAGE_BUILD
+        __llvm_profile_write_file();
+#endif
+        // Rethrow so the process still dies from an uncaught exception,
+        // printing the failure to stderr exactly as before.
+        throw;
     }
     return 0;
 }

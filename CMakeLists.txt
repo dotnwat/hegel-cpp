@@ -28,6 +28,9 @@ set(CMAKE_CXX_STANDARD 20)
 if(HEGEL_COVERAGE)
     add_compile_options(-fprofile-instr-generate -fcoverage-mapping)
     add_link_options(-fprofile-instr-generate)
+    # Lets test binaries that die via abort() (uncaught exceptions) flush
+    # their profile data manually; see tests/subject_main.cpp.
+    add_compile_definitions(HEGEL_COVERAGE_BUILD)
 endif()
 
 # Acquire libhegel (Hegel's native engine, called in-process via its C ABI)

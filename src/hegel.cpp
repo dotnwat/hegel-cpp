@@ -67,45 +67,8 @@ namespace hegel {
             std::exception_ptr exception;
         };
 
-        // Run the user's test body once and classify the outcome into the
-        // libhegel status the caller passes to hegel_mark_complete.
-        BodyOutcome run_body(const std::function<void(TestCase&)>& test_fn,
-                             TestCase& tc) {
-            try {
-                test_fn(tc);
-                return {HEGEL_STATUS_VALID, "", ""};
-            } catch (const internal::HegelStopTest&) {
-                return {HEGEL_STATUS_OVERRUN, "", ""};
-            } catch (const internal::HegelReject&) {
-                return {HEGEL_STATUS_INVALID, "", ""};
-            } catch (const std::exception& e) {
-                return {HEGEL_STATUS_INTERESTING, typeid(e).name(), e.what(),
-                        std::current_exception()};
-            } catch (...) {
-                // Only user code runs inside the try, so anything caught
-                // here is a test failure — including a foreign (non-C++)
-                // exception, for which the ABI can supply neither a
-                // type_info nor an exception_ptr. Substitute a described
-                // exception so the re-raise path stays valid.
-                const char* origin = "unknown_exception";
-                if (const std::type_info* tinfo =
-                        abi::__cxa_current_exception_type()) {
-                    origin = tinfo->name();
-                }
-                std::exception_ptr exception = std::current_exception();
-                if (exception == nullptr) {
-                    // GCOVR_EXCL_START
-                    exception = std::make_exception_ptr(std::runtime_error(
-                        "test body raised a foreign (non-C++) exception"));
-                    // GCOVR_EXCL_STOP
-                }
-                return {HEGEL_STATUS_INTERESTING, origin, "", exception};
-            }
-        }
-
-        // Demangle a typeid name for display, owning the malloc'd result.
-        // Every caller passes a valid mangling (a std::exception typeid), so
-        // the fallback covers only the demangler's allocation failure.
+        // Demangle a typeid name, owning the malloc'd result. The fallback
+        // covers unparseable input and the demangler's allocation failure.
         std::string demangle(const char* name) {
             int status = 0;
             char* demangled =
@@ -116,6 +79,44 @@ namespace hegel {
             std::string out = demangled;
             std::free(demangled);
             return out;
+        }
+
+        // Run the user's test body once and classify the outcome into the
+        // libhegel status the caller passes to hegel_mark_complete. The
+        // origin is demangled here, before it reaches the engine, so the
+        // engine's failure origins are readable as reported.
+        BodyOutcome run_body(const std::function<void(TestCase&)>& test_fn,
+                             TestCase& tc) {
+            try {
+                test_fn(tc);
+                return {HEGEL_STATUS_VALID, "", ""};
+            } catch (const internal::HegelStopTest&) {
+                return {HEGEL_STATUS_OVERRUN, "", ""};
+            } catch (const internal::HegelReject&) {
+                return {HEGEL_STATUS_INVALID, "", ""};
+            } catch (const std::exception& e) {
+                return {HEGEL_STATUS_INTERESTING, demangle(typeid(e).name()),
+                        e.what(), std::current_exception()};
+            } catch (...) {
+                // Only user code runs inside the try, so anything caught
+                // here is a test failure — including a foreign (non-C++)
+                // exception, for which the ABI can supply neither a
+                // type_info nor an exception_ptr. Substitute a described
+                // exception so the re-raise path stays valid.
+                std::string origin = "unknown_exception";
+                if (const std::type_info* tinfo =
+                        abi::__cxa_current_exception_type()) {
+                    origin = demangle(tinfo->name());
+                }
+                std::exception_ptr exception = std::current_exception();
+                if (exception == nullptr) {
+                    // GCOVR_EXCL_START
+                    exception = std::make_exception_ptr(std::runtime_error(
+                        "test body raised a foreign (non-C++) exception"));
+                    // GCOVR_EXCL_STOP
+                }
+                return {HEGEL_STATUS_INTERESTING, origin, "", exception};
+            }
         }
 
         void mark_complete(hegel_context_t* ctx, hegel_test_case_t* tc,
@@ -255,9 +256,7 @@ namespace hegel {
         size_t failure_count = impl::run_result_failure_count(ctx, result);
         bool quiet = settings.verbosity == Verbosity::Quiet;
 
-        auto handle_failure = [&](size_t index) {
-            const hegel_failure_t* failure =
-                impl::run_result_failure(ctx, result, index);
+        auto handle_failure = [&](const hegel_failure_t* failure) {
             const char* blob = impl::failure_reproduction_blob(ctx, failure);
             if (blob == nullptr) {
                 // GCOVR_EXCL_START
@@ -276,17 +275,21 @@ namespace hegel {
         };
 
         if (failure_count == 1) {
-            std::rethrow_exception(handle_failure(0).exception);
+            std::rethrow_exception(
+                handle_failure(impl::run_result_failure(ctx, result, 0))
+                    .exception);
         }
 
         for (size_t i = 0; i < failure_count; i++) {
+            const hegel_failure_t* failure =
+                impl::run_result_failure(ctx, result, i);
             if (!quiet) {
                 std::fprintf(stderr, "Failure %zu:\n", i + 1);
             }
-            BodyOutcome outcome = handle_failure(i);
+            BodyOutcome outcome = handle_failure(failure);
             if (!quiet && !outcome.message.empty()) {
                 std::fprintf(stderr, "Exception %s: %s\n",
-                             demangle(outcome.origin.c_str()).c_str(),
+                             impl::failure_origin(ctx, failure),
                              outcome.message.c_str());
             }
         }

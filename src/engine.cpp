@@ -182,6 +182,13 @@ namespace hegel::impl {
         return blob;
     }
 
+    const char* failure_origin(hegel_context_t* ctx,
+                               const hegel_failure_t* failure) {
+        const char* origin = nullptr;
+        check_rc(ctx, hegel_failure_origin(ctx, failure, &origin));
+        return origin;
+    }
+
     // GCOVR_EXCL_STOP
 
 } // namespace hegel::impl

@@ -60,6 +60,9 @@ namespace hegel::impl {
                                               size_t index);
     const char* failure_reproduction_blob(hegel_context_t* ctx,
                                           const hegel_failure_t* failure);
+    /// The origin string the engine grouped this failure's probes under.
+    const char* failure_origin(hegel_context_t* ctx,
+                               const hegel_failure_t* failure);
 
 } // namespace hegel::impl
 
