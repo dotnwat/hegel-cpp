@@ -108,10 +108,30 @@ namespace hegel::impl {
         check_rc(ctx, hegel_settings_set_database(ctx, s, path));
     }
 
+    void settings_set_database_key(hegel_context_t* ctx, hegel_settings_t* s,
+                                   const char* key) {
+        check_rc(ctx, hegel_settings_set_database_key(ctx, s, key));
+    }
+
     void settings_set_suppress_health_check(hegel_context_t* ctx,
                                             hegel_settings_t* s,
                                             uint32_t mask) {
         check_rc(ctx, hegel_settings_set_suppress_health_check(ctx, s, mask));
+    }
+
+    void settings_set_phases(hegel_context_t* ctx, hegel_settings_t* s,
+                             uint32_t phases) {
+        check_rc(ctx, hegel_settings_set_phases(ctx, s, phases));
+    }
+
+    void settings_set_mode(hegel_context_t* ctx, hegel_settings_t* s,
+                           hegel_mode_t mode) {
+        check_rc(ctx, hegel_settings_set_mode(ctx, s, mode));
+    }
+
+    void settings_set_backend(hegel_context_t* ctx, hegel_settings_t* s,
+                              hegel_backend_t backend) {
+        check_rc(ctx, hegel_settings_set_backend(ctx, s, backend));
     }
 
     hegel_settings_t* settings_new(hegel_context_t* ctx) {
