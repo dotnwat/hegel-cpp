@@ -59,17 +59,8 @@ if(HEGEL_REFLECTION)
     set(REFLECTCPP_INSTALL ON)
 endif()
 
-set(NLOHMANN_JSON_VERSION "3.12.0" CACHE STRING "nlohmann/json version tag")
-FetchContent_Declare(
-    nlohmann_json
-    GIT_REPOSITORY https://github.com/nlohmann/json.git
-    GIT_TAG v${NLOHMANN_JSON_VERSION}
-)
-
 if(HEGEL_REFLECTION)
-    FetchContent_MakeAvailable(reflectcpp nlohmann_json)
-else()
-    FetchContent_MakeAvailable(nlohmann_json)
+    FetchContent_MakeAvailable(reflectcpp)
 endif()
 
 add_library(hegel
@@ -79,7 +70,6 @@ add_library(hegel
     src/test_case.cpp
     src/protocol.cpp
     src/engine.cpp
-    src/json.cpp
 )
 target_include_directories(hegel PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
@@ -88,7 +78,6 @@ target_include_directories(hegel PUBLIC
     PRIVATE
         src
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/libhegel>
-        $<BUILD_INTERFACE:${nlohmann_json_SOURCE_DIR}/include>
 )
 target_link_libraries(hegel
   PUBLIC

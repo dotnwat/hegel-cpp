@@ -71,35 +71,24 @@ TEST(DefaultGenerator, StructTypes) {
     EXPECT_NO_THROW(gs::default_generator<Person>());
 }
 
-TEST(DefaultGenerator, PrimitiveSchemas) {
-    EXPECT_TRUE(gs::default_generator<int>().schema().has_value());
-    EXPECT_TRUE(gs::default_generator<double>().schema().has_value());
-    EXPECT_TRUE(gs::default_generator<bool>().schema().has_value());
-    EXPECT_TRUE(gs::default_generator<std::string>().schema().has_value());
+TEST(Map, TransformsPrimitiveDraws) {
+    hegel::test([](hegel::TestCase& tc) {
+        auto squared =
+            gs::integers<int>({.min_value = 0, .max_value = 10}).map([](int x) {
+                return x * x;
+            });
+        int value = tc.draw(squared);
+        EXPECT_GE(value, 0);
+        EXPECT_LE(value, 100);
+    });
 }
 
-TEST(DefaultGenerator, StructHasNoSchema) {
-    // Struct generators are function-based (no schema)
-    EXPECT_FALSE(gs::default_generator<Point>().schema().has_value());
-}
-
-TEST(Map, PreservesSchemaOnBasicGenerator) {
-    // map() on a schema-backed generator should keep the schema (the
-    // transformation is composed into the client-side parse step).
-    auto squared =
-        gs::integers<int>({.min_value = 0, .max_value = 10}).map([](int x) {
-            return x * x;
-        });
-    EXPECT_TRUE(squared.schema().has_value());
-}
-
-TEST(Map, DropsSchemaOnFunctionBacked) {
-    // map() on a function-backed generator (no as_basic()) falls back to a
-    // function-backed result.
-    auto struct_gen = gs::default_generator<Point>();
-    EXPECT_FALSE(struct_gen.schema().has_value());
-    auto mapped = struct_gen.map([](const Point& p) { return p.x; });
-    EXPECT_FALSE(mapped.schema().has_value());
+TEST(Map, TransformsDerivedStructDraws) {
+    hegel::test([](hegel::TestCase& tc) {
+        auto mapped = gs::default_generator<Point>().map(
+            [](const Point& p) { return p.x; });
+        (void)tc.draw(mapped);
+    });
 }
 
 TEST(DefaultGenerator, Instantiation) {

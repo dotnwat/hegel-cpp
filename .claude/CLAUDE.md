@@ -33,9 +33,8 @@ you to port a feature from there.
 
 - C++20 compiler by default. The only hard C++20 dependency is reflect-cpp (used by `default_generator`). Configure with `-DHEGEL_REFLECTION=OFF` to drop reflect-cpp and build/consume at C++17 — `default_generator` and automatic struct parsing become unavailable, but everything else works. The feature is gated by the `HEGEL_HAS_REFLECTION` macro (set from the CMake option; see `include/hegel/config.h`). Designated-initializer params (`integers<int>({.min_value = 0})`) then rely on a GCC/Clang C++17 extension.
 - CMake 3.14+
-- libhegel (Hegel's native engine) — a prebuilt shared library downloaded at configure time by `cmake/libhegel.cmake` from the hegel-rust GitHub release, verified against its published SHA-256, and linked. Override with `-DHEGEL_LIBHEGEL_LIBRARY=/path/to/libhegel_c.<ext>`. The vendored C ABI header lives at `libhegel/hegel.h`.
-- reflect-cpp v0.22.0 (automatic schema generation via reflection)
-- nlohmann/json v3.12.0 (JSON manipulation + CBOR serialization)
+- libhegel (Hegel's native engine) — a prebuilt shared library downloaded at configure time by `cmake/libhegel.cmake` from the hegel-rust GitHub release, verified against its published SHA-256, and linked. Override with `-DHEGEL_LIBHEGEL_LIBRARY=/path/to/libhegel_c.<ext>`. The vendored C ABI header lives at `libhegel/hegel.h`. Keep the version and hashes in `nix/flake.nix` in sync.
+- reflect-cpp v0.22.0 (type-directed generator derivation via reflection)
 - Google Test (for unit tests)
 
 ## Architecture
@@ -50,8 +49,9 @@ The library calls libhegel's C ABI (`hegel_*` functions) directly, in-process �
 
 ### Draw path
 
-A `draw()` calls `internal::generate_from_schema(schema, tc)` (`src/engine.cpp`), which CBOR-encodes the generator's schema, calls `hegel_generate`, and CBOR-decodes the returned value:
-- CBOR via nlohmann's `to_cbor()`/`from_cbor()` (`src/protocol.h`); WTF-8 hegel strings arrive as tagged binary (subtype 91) and are converted back to strings.
+A `draw()` calls libhegel's typed draw primitives (`hegel_generate_integer`, `hegel_generate_float`, `hegel_generate_boolean`, `hegel_generate_bytes`, `hegel_generate_string`, `hegel_generate_date`/`_time`/`_datetime`, `hegel_generate_ipv4`/`_ipv6`) directly — there is no schema or serialization layer. The template-visible primitives (`draw_integer`, `draw_integer_unsigned`, `draw_float`, `draw_boolean`, spans, collections) are declared in `include/hegel/internal.h` and implemented in `src/engine.cpp`; the string/bytes/date draws used only by `src/generators.cpp` live in `src/engine.h` (`hegel::impl`).
+- Integer ranges that don't fit in `int64_t` (e.g. `integers<uint64_t>()`) go through `hegel_generate_integer_big` with two's-complement little-endian bound buffers.
+- String-family generators (`text`, `characters`, `from_regex`, `emails`, `urls`, `domains`) build a validated, immutable `hegel_string_generator_t` handle once at generator construction and draw through it with `hegel_generate_string`.
 - `HEGEL_E_STOP_TEST` → `HegelStopTest` (case marked OVERRUN); `HEGEL_E_ASSUME` → `HegelReject` (INVALID); other non-OK codes throw `std::runtime_error` with `hegel_context_last_error`.
 
 ### Key Components
@@ -61,37 +61,26 @@ Public headers in `include/hegel/`:
 - **`test_case.h`** - TestCase class with `draw()`, `assume()`, `note()` methods passed to the test callback
 - **`core.h`** - `IGenerator<T>`, `Generator<T>`, `BasicGenerator<T>` (schema + client-side parser bundle), `CompositeGenerator<T>`, `MappedGenerator<T, U>` with `map()`, `flat_map()`, `filter()` combinators
 - **`settings.h`** - `Settings`, `Database`, `Verbosity` enum
-- **`internal.h`** - `generate_from_schema()` and the `HegelReject` / `HegelStopTest` exceptions (internal only; users interact via `TestCase` methods)
-- **`json.h` / `nlohmann_reader.h`** - JSON interop helpers (avoid including `<nlohmann/json.hpp>` from public headers; `test_no_nlohmann_include.cpp` enforces this)
+- **`internal.h`** - The typed draw primitives (`draw_integer`, `draw_float`, `draw_boolean`, spans, collections), `SpanLabel`, and the `HegelReject` / `HegelStopTest` exceptions (internal only; users interact via `TestCase` methods)
 - **`generators/`** - Strategy factory functions in `hegel::generators` namespace, split by category: `primitives.h`, `numeric.h`, `strings.h`, `collections.h`, `combinators.h`, `formats.h`, `builds.h`, `default.h` (type-directed derivation via reflect-cpp), `random.h`
 
 Private implementation in `src/`:
-- **`engine.{h,cpp}`** - Thin helpers over the libhegel C ABI: `last_error()` and the `generate_from_schema()` draw path (`hegel_generate`)
-- **`protocol.{h,cpp}`** - CBOR encode/decode helpers (nlohmann-backed) + the protocol-debug flag. (The former binary packet/socket protocol is gone.)
+- **`engine.{h,cpp}`** - Wrappers over the libhegel C ABI: run-lifecycle helpers (`hegel::impl`), string-generator construction, and the draw-primitive implementations (including per-draw REQUEST/RESPONSE tracing and `Generated:` logging)
+- **`protocol.{h,cpp}`** - The draw-tracing debug flag (Debug verbosity or `HEGEL_PROTOCOL_DEBUG`)
 - **`test_case.{h,cpp}`** - Private `TestCaseData` struct (holds the borrowed `hegel_context_t*` / `hegel_test_case_t*` plus per-iteration state) and the `TestCase` method implementations
-- **`json_impl.h`** - Internal nlohmann-backed JSON implementation (not exposed publicly)
-- **`generators.cpp` / `hegel.cpp` / `json.cpp`** - implementations for the corresponding public headers; `hegel.cpp` also holds the `hegel::test()` run loop
+- **`generators.cpp` / `hegel.cpp`** - implementations for the corresponding public headers; `hegel.cpp` also holds the `hegel::test()` run loop
 - **`cmake/libhegel.cmake`** - downloads/verifies/links libhegel and exposes the `hegel::libhegel` imported target; `libhegel/hegel.h` is the vendored C ABI header
 
 ### Generator Pattern
 
-Each generator concept has its own concrete `IGenerator<T>` subclass (`IntegerGenerator<T>`, `VectorsGenerator<T>`, `OneOfGenerator<T>`, `TextGenerator`, …). The subclass stores its configuration and implements `as_basic()`, `schema()`, and `do_draw()`.
+Each generator concept has its own concrete `IGenerator<T>` subclass (`IntegerGenerator<T>`, `VectorsGenerator<T>`, `OneOfGenerator<T>`, `TextGenerator`, …). The subclass stores its configuration (validated in the constructor) and implements `do_draw()`, composing the typed draw primitives the same way hegel-rust's own generator library does:
 
-A schema-backed generator holds a `BasicGenerator<T>` — a bundle of `(schema, parse: json_raw_ref → T)`. The parse closure decouples the CBOR schema sent to the engine from how the client turns the response into `T`. Each generator builds this once **in its constructor** and stores it in `IGenerator<T>::basic_` (a protected `std::optional`); composites build theirs from their children's `basic()`. `do_draw()`/`schema()` and the composite fallbacks read `basic()`. Building the schema per draw (rather than once at construction) used to dominate shrink-heavy runs. Generators with no schema path (`filter`, `flat_map`, user `compose`) leave `basic_` empty and override `do_draw()`.
+- **Primitives** map 1:1 onto a draw call (`integers` → `draw_integer`/`draw_integer_unsigned`, `floats` → `draw_float`, `booleans` → `draw_boolean(0.5)`). `just()` draws nothing and returns its captured value.
+- **Collections** (`vectors`, `sets`, `maps`) open their span (`SpanLabel::List`/`Set`/`Map`), create an engine-managed collection (`new_collection`), and loop `collection_more`, drawing one element per iteration — the engine owns the size logic. Duplicates (sets, maps, `unique` vectors) are pushed back with `collection_reject` so the engine draws a replacement.
+- **Branching** (`one_of`, `variant`) opens a `SpanLabel::OneOf` span and draws a branch index; `optional` opens `SpanLabel::Optional` and gates on `draw_boolean(0.5)`; `sampled_from` is a bare index draw with no span.
+- **Combinators**: `map` wraps the source draw in a `Mapped` span; `flat_map` in a `FlatMap` span; `filter` retries up to 3 times inside a `Filter` span, closing it with `discard=true` on predicate failure, then rejects the test case.
 
-- **Basic (schema-backed)**: primitives (`integers`, `text`, `just`, ...) always return `Some`. Composites (`vectors`, `one_of`, `optional`, `tuples`, `variant`, ...) return `Some` iff all their inputs are basic — drawing then sends a single compound schema and the client parser walks the response per-element.
-- **Function-backed fallback**: `filter`, `flat_map`, and user-supplied `compose` have no schema path. Composites with non-basic inputs fall back *inside their own `do_draw`* to client-side generation (multiple `hegel_generate` calls, driven by `booleans()`/`integers()` for index/gate draws).
-
-`map(f)` is implemented by `MappedGenerator<T, U>`, which composes `f` into the source's `BasicGenerator::parse` when available, preserving the schema:
-
-```cpp
-auto squared = integers<int>({.min_value = 0}).map([](int x) { return x * x; });
-// squared.as_basic() is still Some — schema is integer, parse is compose(square, get_int)
-```
-
-Composite classes (`VectorsGenerator`, `SetsGenerator`, `MapsGenerator`, `TuplesGenerator`, `OneOfGenerator`, `OptionalGenerator`, `VariantGenerator`) build their compound schema from their inputs' basic schemas and a parser that iterates the server response applying each element's parser in turn. `OneOfGenerator` and `VariantGenerator` tag each branch with an index so the client knows which parser to apply.
-
-(The engine response is the value libhegel returns from `hegel_generate`; "round-trip" now means an in-process C ABI call, not a socket exchange.)
+Spans exist so the shrinker can reason about a group of draws as a unit; open one span per compound draw and close it exactly once (rust-style: leave it open if an exception unwinds — the runner marks the case complete anyway).
 
 ## Code Style
 
