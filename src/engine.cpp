@@ -8,10 +8,8 @@
 #include <test_case.h>
 
 #include <array>
-#include <cinttypes>
 #include <cstddef>
 #include <cstdint>
-#include <cstdio>
 #include <iostream>
 #include <limits>
 #include <stdexcept>
@@ -272,23 +270,19 @@ namespace hegel::impl {
             }
         };
 
-        std::string format_date(const hegel_date_t& d) {
-            char buf[16];
-            std::snprintf(buf, sizeof(buf), "%04" PRId32 "-%02u-%02u", d.year,
-                          d.month, d.day);
-            return buf;
+        // Raw field dumps for the draw trace; presentation (ISO 8601) is
+        // the generators' concern.
+        std::string raw_fields(const hegel_date_t& d) {
+            return "{year=" + std::to_string(d.year) +
+                   ", month=" + std::to_string(d.month) +
+                   ", day=" + std::to_string(d.day) + "}";
         }
 
-        std::string format_time(const hegel_time_t& t) {
-            char buf[24];
-            if (t.microsecond != 0) {
-                std::snprintf(buf, sizeof(buf), "%02u:%02u:%02u.%06" PRIu32,
-                              t.hour, t.minute, t.second, t.microsecond);
-            } else {
-                std::snprintf(buf, sizeof(buf), "%02u:%02u:%02u", t.hour,
-                              t.minute, t.second);
-            }
-            return buf;
+        std::string raw_fields(const hegel_time_t& t) {
+            return "{hour=" + std::to_string(t.hour) +
+                   ", minute=" + std::to_string(t.minute) +
+                   ", second=" + std::to_string(t.second) +
+                   ", microsecond=" + std::to_string(t.microsecond) + "}";
         }
 
         // Construct a string generator, converting an engine rejection into
@@ -420,7 +414,7 @@ namespace hegel::impl {
             hegel_generate_date(scope.ctx, scope.tc, hegel_date_t{1, 1, 1},
                                 hegel_date_t{9999, 12, 31}, &value),
             "hegel_generate_date");
-        scope.log_response(format_date(value));
+        scope.log_response(raw_fields(value));
         return value;
     }
 
@@ -432,7 +426,7 @@ namespace hegel::impl {
             hegel_generate_time(scope.ctx, scope.tc, hegel_time_t{0, 0, 0, 0},
                                 hegel_time_t{23, 59, 59, 999999}, &value),
             "hegel_generate_time");
-        scope.log_response(format_time(value));
+        scope.log_response(raw_fields(value));
         return value;
     }
 
@@ -445,8 +439,8 @@ namespace hegel::impl {
         scope.check_draw(hegel_generate_datetime(scope.ctx, scope.tc, min_value,
                                                  max_value, &value),
                          "hegel_generate_datetime");
-        scope.log_response(format_date(value.date) + "T" +
-                           format_time(value.time));
+        scope.log_response("{date=" + raw_fields(value.date) +
+                           ", time=" + raw_fields(value.time) + "}");
         return value;
     }
 

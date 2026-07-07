@@ -11,6 +11,7 @@
 #include <hegel.h>
 
 #include <algorithm>
+#include <cstddef>
 #include <cstdint>
 #include <cstdio>
 #include <limits>
@@ -180,34 +181,40 @@ namespace hegel::generators {
             }
         };
 
+        /// ISO 8601 `YYYY-MM-DD`.
+        std::string format_date(const hegel_date_t& d) {
+            char buf[16];
+            std::snprintf(buf, sizeof(buf), "%04d-%02u-%02u",
+                          static_cast<int>(d.year), d.month, d.day);
+            return buf;
+        }
+
+        /// ISO 8601 `HH:MM:SS[.ffffff]` — the fractional part is present
+        /// iff the microsecond is nonzero, matching `isoformat()`.
+        std::string format_time(const hegel_time_t& t) {
+            char buf[24];
+            if (t.microsecond != 0) {
+                std::snprintf(buf, sizeof(buf), "%02u:%02u:%02u.%06u", t.hour,
+                              t.minute, t.second,
+                              static_cast<unsigned>(t.microsecond));
+            } else {
+                std::snprintf(buf, sizeof(buf), "%02u:%02u:%02u", t.hour,
+                              t.minute, t.second);
+            }
+            return buf;
+        }
+
         class DatesGenerator : public IGenerator<std::string> {
           public:
             std::string do_draw(const TestCase& tc) const override {
-                hegel_date_t d = impl::draw_date(tc);
-                char buf[16];
-                std::snprintf(buf, sizeof(buf), "%04d-%02u-%02u",
-                              static_cast<int>(d.year), d.month, d.day);
-                return buf;
+                return format_date(impl::draw_date(tc));
             }
         };
 
         class TimesGenerator : public IGenerator<std::string> {
           public:
             std::string do_draw(const TestCase& tc) const override {
-                return format(impl::draw_time(tc));
-            }
-
-            static std::string format(const hegel_time_t& t) {
-                char buf[24];
-                if (t.microsecond != 0) {
-                    std::snprintf(buf, sizeof(buf), "%02u:%02u:%02u.%06u",
-                                  t.hour, t.minute, t.second,
-                                  static_cast<unsigned>(t.microsecond));
-                } else {
-                    std::snprintf(buf, sizeof(buf), "%02u:%02u:%02u", t.hour,
-                                  t.minute, t.second);
-                }
-                return buf;
+                return format_time(impl::draw_time(tc));
             }
         };
 
@@ -215,12 +222,7 @@ namespace hegel::generators {
           public:
             std::string do_draw(const TestCase& tc) const override {
                 hegel_datetime_t dt = impl::draw_datetime(tc);
-                char date_buf[16];
-                std::snprintf(date_buf, sizeof(date_buf), "%04d-%02u-%02u",
-                              static_cast<int>(dt.date.year), dt.date.month,
-                              dt.date.day);
-                return std::string(date_buf) + "T" +
-                       TimesGenerator::format(dt.time);
+                return format_date(dt.date) + "T" + format_time(dt.time);
             }
         };
 
