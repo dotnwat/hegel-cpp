@@ -12,7 +12,6 @@
 #include <hegel/test_case.h>
 
 #include <engine.h>
-#include <protocol.h>
 #include <test_case.h>
 
 #include <hegel.h>
@@ -39,15 +38,8 @@ namespace hegel {
             "variables, system time, or external random number generators.";
 
         // RAII guards for the libhegel handles. Each `*_free` is a no-op on
-        // NULL and never throws.
-        struct ContextGuard {
-            hegel_context_t* ctx = hegel_context_new();
-            ContextGuard() = default;
-            ~ContextGuard() { hegel_context_free(ctx); }
-            ContextGuard(const ContextGuard&) = delete;
-            ContextGuard& operator=(const ContextGuard&) = delete;
-        };
-
+        // NULL and never throws. (The error-reporting context is not guarded
+        // here: impl::thread_context() owns one per thread.)
         struct SettingsGuard {
             hegel_context_t* ctx;
             hegel_settings_t* s = nullptr;
@@ -58,6 +50,27 @@ namespace hegel {
             hegel_context_t* ctx;
             hegel_run_t* run = nullptr;
             ~RunGuard() { hegel_run_free(ctx, run); }
+        };
+
+        // Every test-case handle is caller-owned, whatever produced it.
+        struct TestCaseGuard {
+            hegel_context_t* ctx;
+            hegel_test_case_t* tc = nullptr;
+            ~TestCaseGuard() { hegel_test_case_free(ctx, tc); }
+        };
+
+        // Caller-owned snapshot of a finished run's result.
+        struct ResultGuard {
+            hegel_context_t* ctx;
+            hegel_run_result_t* result = nullptr;
+            ~ResultGuard() { hegel_run_result_free(ctx, result); }
+        };
+
+        // Caller-owned snapshot of one distinct failure.
+        struct FailureGuard {
+            hegel_context_t* ctx;
+            hegel_failure_t* failure = nullptr;
+            ~FailureGuard() { hegel_failure_free(ctx, failure); }
         };
 
         struct BodyOutcome {
@@ -129,15 +142,15 @@ namespace hegel {
         BodyOutcome replay_failure(hegel_context_t* ctx, hegel_settings_t* s,
                                    const char* blob, Verbosity verbosity,
                                    const std::function<void(TestCase&)>& fn) {
-            hegel_test_case_t* tc = impl::test_case_from_blob(ctx, s, blob);
-            // Positional init (fields: ctx, tc, is_final, verbosity) so this
+            TestCaseGuard tc_guard{ctx};
+            tc_guard.tc = impl::test_case_from_blob(ctx, s, blob);
+            // Positional init (fields: tc, is_final, verbosity) so this
             // TU stays clean under a C++17 (HEGEL_REFLECTION=OFF) build.
-            impl::test_case::TestCaseData data{ctx, tc, /*is_final=*/true,
-                                               verbosity};
+            impl::test_case::TestCaseData data{tc_guard.tc,
+                                               /*is_final=*/true, verbosity};
             TestCase tc_obj(&data);
             BodyOutcome outcome = run_body(fn, tc_obj);
-            mark_complete(ctx, tc, outcome);
-            hegel_test_case_free(ctx, tc);
+            mark_complete(ctx, tc_guard.tc, outcome);
             return outcome;
         }
 
@@ -208,10 +221,7 @@ namespace hegel {
 
     void test(const std::function<void(TestCase&)>& test_fn,
               const Settings& settings) {
-        impl::protocol::init_protocol_debug(settings.verbosity);
-
-        ContextGuard ctx_guard;
-        hegel_context_t* ctx = ctx_guard.ctx;
+        hegel_context_t* ctx = impl::thread_context();
 
         SettingsGuard settings_guard{ctx};
         settings_guard.s = impl::settings_new(ctx);
@@ -223,20 +233,24 @@ namespace hegel {
         hegel_run_t* run = run_guard.run;
 
         // Generation loop: pull cases until the engine reports completion
-        // (NULL test case), running and marking each.
+        // (NULL test case), running, marking, and releasing each.
         while (true) {
-            hegel_test_case_t* tc = impl::next_test_case(ctx, run);
-            if (tc == nullptr) {
+            TestCaseGuard tc_guard{ctx};
+            tc_guard.tc = impl::next_test_case(ctx, run);
+            if (tc_guard.tc == nullptr) {
                 break;
             }
-            impl::test_case::TestCaseData data{ctx, tc, /*is_final=*/false,
+            impl::test_case::TestCaseData data{tc_guard.tc,
+                                               /*is_final=*/false,
                                                settings.verbosity};
             TestCase tc_obj(&data);
             BodyOutcome outcome = run_body(test_fn, tc_obj);
-            mark_complete(ctx, tc, outcome);
+            mark_complete(ctx, tc_guard.tc, outcome);
         }
 
-        const hegel_run_result_t* result = impl::run_result(ctx, run);
+        ResultGuard result_guard{ctx};
+        result_guard.result = impl::run_result(ctx, run);
+        hegel_run_result_t* result = result_guard.result;
         hegel_run_status_t run_status = impl::run_result_status(ctx, result);
 
         if (run_status == HEGEL_RUN_STATUS_PASSED) {
@@ -275,21 +289,22 @@ namespace hegel {
         };
 
         if (failure_count == 1) {
+            FailureGuard failure_guard{ctx};
+            failure_guard.failure = impl::run_result_failure(ctx, result, 0);
             std::rethrow_exception(
-                handle_failure(impl::run_result_failure(ctx, result, 0))
-                    .exception);
+                handle_failure(failure_guard.failure).exception);
         }
 
         for (size_t i = 0; i < failure_count; i++) {
-            const hegel_failure_t* failure =
-                impl::run_result_failure(ctx, result, i);
+            FailureGuard failure_guard{ctx};
+            failure_guard.failure = impl::run_result_failure(ctx, result, i);
             if (!quiet) {
                 std::fprintf(stderr, "Failure %zu:\n", i + 1);
             }
-            BodyOutcome outcome = handle_failure(failure);
+            BodyOutcome outcome = handle_failure(failure_guard.failure);
             if (!quiet && !outcome.message.empty()) {
                 std::fprintf(stderr, "Exception %s: %s\n",
-                             impl::failure_origin(ctx, failure),
+                             impl::failure_origin(ctx, failure_guard.failure),
                              outcome.message.c_str());
             }
         }
