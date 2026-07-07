@@ -196,8 +196,8 @@ TEST(Settings, DatabaseReplaysFailure) {
         try {
             check_database(Settings{
                 .database = Database::from_path(db_path.string()),
-                .phases = phases,
                 .database_key = key,
+                .phases = phases,
             });
         } catch (const std::runtime_error&) { // NOLINT(bugprone-empty-catch)
             // expected: the property fails and hegel::test() rethrows
