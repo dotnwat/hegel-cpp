@@ -26,6 +26,7 @@
 #include <stdexcept>
 #include <string>
 #include <typeinfo>
+#include <vector>
 
 namespace hegel {
 
@@ -195,6 +196,11 @@ namespace hegel {
                 break;
             }
 
+            if (settings.database_key.has_value()) {
+                impl::settings_set_database_key(ctx, s,
+                                                settings.database_key->c_str());
+            }
+
             uint32_t suppress = 0;
             for (HealthCheck c : settings.suppress_health_check) {
                 switch (c) {
@@ -215,6 +221,53 @@ namespace hegel {
             if (suppress != 0) {
                 impl::settings_set_suppress_health_check(ctx, s, suppress);
             }
+
+            uint32_t phases = 0;
+            for (Phase p : settings.phases) {
+                switch (p) {
+                case Phase::Explicit:
+                    phases |= HEGEL_PHASE_EXPLICIT;
+                    break;
+                case Phase::Reuse:
+                    phases |= HEGEL_PHASE_REUSE;
+                    break;
+                case Phase::Generate:
+                    phases |= HEGEL_PHASE_GENERATE;
+                    break;
+                case Phase::Target:
+                    phases |= HEGEL_PHASE_TARGET;
+                    break;
+                case Phase::Shrink:
+                    phases |= HEGEL_PHASE_SHRINK;
+                    break;
+                }
+            }
+            impl::settings_set_phases(ctx, s, phases);
+
+            hegel_mode_t mode = HEGEL_MODE_TEST_RUN;
+            switch (settings.mode) {
+            case Mode::TestRun:
+                mode = HEGEL_MODE_TEST_RUN;
+                break;
+            case Mode::SingleTestCase:
+                mode = HEGEL_MODE_SINGLE_TEST_CASE;
+                break;
+            }
+            impl::settings_set_mode(ctx, s, mode);
+
+            hegel_backend_t backend = HEGEL_BACKEND_AUTO;
+            switch (settings.backend) {
+            case Backend::Auto:
+                backend = HEGEL_BACKEND_AUTO;
+                break;
+            case Backend::Default:
+                backend = HEGEL_BACKEND_DEFAULT;
+                break;
+            case Backend::Urandom:
+                backend = HEGEL_BACKEND_URANDOM;
+                break;
+            }
+            impl::settings_set_backend(ctx, s, backend);
         }
 
     } // namespace
@@ -311,6 +364,44 @@ namespace hegel {
         throw std::runtime_error("\nHegel test failed with " +
                                  std::to_string(failure_count) +
                                  " distinct failures");
+    }
+
+    namespace internal {
+        namespace {
+            struct RegisteredTest {
+                const char* name;
+                void (*run)();
+            };
+
+            // Function-local static so registrations from other translation
+            // units' static initializers always find a constructed registry.
+            std::vector<RegisteredTest>& test_registry() {
+                static std::vector<RegisteredTest> registry;
+                return registry;
+            }
+        } // namespace
+
+        bool register_test(const char* name, void (*run)()) {
+            test_registry().push_back({name, run});
+            return true;
+        }
+    } // namespace internal
+
+    int run_all_tests() {
+        const auto& registry = internal::test_registry();
+        size_t failed = 0;
+        for (const internal::RegisteredTest& test : registry) {
+            try {
+                test.run();
+            } catch (const std::exception& e) {
+                failed++;
+                std::fprintf(stderr, "[ FAILED ] %s\n%s\n", test.name,
+                             e.what());
+            }
+        }
+        std::fprintf(stderr, "Ran %zu Hegel tests: %zu failed\n",
+                     registry.size(), failed);
+        return failed == 0 ? 0 : 1;
     }
 
 } // namespace hegel
