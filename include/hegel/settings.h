@@ -15,7 +15,7 @@ namespace hegel {
         Quiet,   ///< Minimal output (used by TUI)
         Normal,  ///< Default - standard test output
         Verbose, ///< More detailed output
-        Debug    ///< Maximum verbosity + request/response logging
+        Debug    ///< Maximum verbosity + engine-side shrinker tracing
     };
 
     /**

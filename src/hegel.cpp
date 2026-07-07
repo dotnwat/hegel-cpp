@@ -12,7 +12,6 @@
 #include <hegel/test_case.h>
 
 #include <engine.h>
-#include <protocol.h>
 #include <test_case.h>
 
 #include <hegel.h>
@@ -222,8 +221,6 @@ namespace hegel {
 
     void test(const std::function<void(TestCase&)>& test_fn,
               const Settings& settings) {
-        impl::protocol::init_protocol_debug(settings.verbosity);
-
         hegel_context_t* ctx = impl::thread_context();
 
         SettingsGuard settings_guard{ctx};

@@ -65,8 +65,7 @@ Public headers in `include/hegel/`:
 - **`generators/`** - Strategy factory functions in `hegel::generators` namespace, split by category: `primitives.h`, `numeric.h`, `strings.h`, `collections.h`, `combinators.h`, `formats.h`, `builds.h`, `default.h` (type-directed derivation via reflect-cpp), `random.h`
 
 Private implementation in `src/`:
-- **`engine.{h,cpp}`** - Wrappers over the libhegel C ABI: run-lifecycle helpers (`hegel::impl`), string-generator construction, and the draw-primitive implementations (including per-draw REQUEST/RESPONSE tracing and `Generated:` logging)
-- **`protocol.{h,cpp}`** - The draw-tracing debug flag (Debug verbosity or `HEGEL_PROTOCOL_DEBUG`)
+- **`engine.{h,cpp}`** - Wrappers over the libhegel C ABI: run-lifecycle helpers (`hegel::impl`), string-generator construction, and the draw-primitive implementations (including `Generated:` logging on the final replay / at Verbose+)
 - **`test_case.{h,cpp}`** - Private `TestCaseData` struct (holds the borrowed `hegel_context_t*` / `hegel_test_case_t*` plus per-iteration state) and the `TestCase` method implementations
 - **`generators.cpp` / `hegel.cpp`** - implementations for the corresponding public headers; `hegel.cpp` also holds the `hegel::test()` run loop
 - **`cmake/libhegel.cmake`** - downloads/verifies/links libhegel and exposes the `hegel::libhegel` imported target; `libhegel/hegel.h` is the vendored C ABI header
@@ -87,7 +86,7 @@ Spans exist so the shrinker can reason about a group of draws as a unit; open on
 - **Formatting**: LLVM base style, 4-space indentation, left-aligned pointers (`int*`). Run `just format` before committing.
 - **Headers**: Use `.h` extension (not `.hpp`)
 - **Namespaces**: `hegel` for public API (including run configuration types like `Settings`, `Database`, `Verbosity`), `hegel::generators` for generators and strategies, `hegel::internal` for internals referenced in public headers, `hegel::impl::*` for purely private implementation
-- **Includes**: Public headers use relative includes (`#include "settings.h"`), source files use angle brackets for both public (`<hegel/internal.h>`) and private (`<protocol.h>`, `<engine.h>`) headers
+- **Includes**: Public headers use relative includes (`#include "settings.h"`), source files use angle brackets for both public (`<hegel/internal.h>`) and private (`<engine.h>`, `<test_case.h>`) headers
 - **File organization**: Each focused `.cpp` has a corresponding `.h` in `src/`. Private headers live in `src/`, not `include/`
 - **Public API surface**: Minimal. Only what users need goes in `include/hegel/`. Internal details hidden via `@cond INTERNAL` / `@endcond` in Doxygen
 - **Parameter structs**: Designated initializers (C++20): `integers<int>({.min_value = 0})`
@@ -103,18 +102,18 @@ auto x = tc.draw(integers<int>());
 tc.assume(x != std::numeric_limits<int32_t>::min());  // Skip edge case
 ```
 
-**Wrong use** - masking engine/protocol errors:
+**Wrong use** - masking engine errors:
 ```cpp
 // BAD: silently swallows an engine error as if it were bad test data
-tc.assume(response.contains("result"));
+tc.assume(rc == HEGEL_OK);
 
 // GOOD: surface the error so it can be diagnosed and fixed
-if (!response.contains("result")) {
-    throw std::runtime_error("Engine response missing 'result' field");
+if (rc != HEGEL_OK) {
+    throw std::runtime_error("hegel_generate_integer failed: " + last_error(ctx));
 }
 ```
 
 Rules of thumb:
-- libhegel returned an error or malformed response? Throw `std::runtime_error`.
+- libhegel returned an unexpected error code? Throw `std::runtime_error`.
 - Caller passed invalid arguments (e.g. empty vector)? Throw `std::invalid_argument`.
 - Generated test data doesn't meet a precondition? Use `tc.assume()`.

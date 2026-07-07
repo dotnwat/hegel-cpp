@@ -4,7 +4,6 @@
 #include <hegel/test_case.h>
 
 #include <hegel.h>
-#include <protocol.h>
 #include <test_case.h>
 
 #include <array>
@@ -214,12 +213,6 @@ namespace hegel::impl {
                 log = data->should_log();
             }
 
-            void log_request(const std::string& desc) const {
-                if (protocol::protocol_debug_enabled()) {
-                    std::cerr << "REQUEST: " << desc << "\n";
-                }
-            }
-
             // Route a draw's return code: OK falls through, budget
             // exhaustion and rejection unwind the test body via their
             // dedicated exceptions, anything else is an engine failure.
@@ -243,10 +236,10 @@ namespace hegel::impl {
                 // GCOVR_EXCL_STOP
             }
 
-            void log_response(const std::string& value) const {
-                if (protocol::protocol_debug_enabled()) {
-                    std::cerr << "RESPONSE: " << value << "\n";
-                }
+            // Surface the drawn value per the verbosity policy: on the
+            // final replay of a failure at Normal, on every case at
+            // Verbose and above.
+            void log_generated(const std::string& value) const {
                 if (log) {
                     std::cerr << "Generated: " << value << "\n";
                 }
@@ -381,72 +374,65 @@ namespace hegel::impl {
     std::string draw_string(const TestCase& tc,
                             const hegel_string_generator_t* generator) {
         DrawScope scope(tc);
-        scope.log_request("string");
         StringResultGuard guard{scope.ctx};
         scope.check_draw(hegel_generate_string(scope.ctx, scope.tc, generator,
                                                &guard.result),
                          "hegel_generate_string");
         std::string value(guard.result.data, guard.result.len);
-        scope.log_response("\"" + value + "\"");
+        scope.log_generated("\"" + value + "\"");
         return value;
     }
 
     std::vector<uint8_t> draw_bytes(const TestCase& tc, uint64_t min_size,
                                     uint64_t max_size) {
         DrawScope scope(tc);
-        scope.log_request("bytes [" + std::to_string(min_size) + ", " +
-                          std::to_string(max_size) + "]");
         BytesResultGuard guard{scope.ctx};
         scope.check_draw(hegel_generate_bytes(scope.ctx, scope.tc, min_size,
                                               max_size, &guard.result),
                          "hegel_generate_bytes");
         std::vector<uint8_t> value(guard.result.data,
                                    guard.result.data + guard.result.len);
-        scope.log_response("<" + std::to_string(value.size()) + " bytes>");
+        scope.log_generated("<" + std::to_string(value.size()) + " bytes>");
         return value;
     }
 
     hegel_date_t draw_date(const TestCase& tc) {
         DrawScope scope(tc);
-        scope.log_request("date");
         hegel_date_t value{};
         scope.check_draw(
             hegel_generate_date(scope.ctx, scope.tc, hegel_date_t{1, 1, 1},
                                 hegel_date_t{9999, 12, 31}, &value),
             "hegel_generate_date");
-        scope.log_response(raw_fields(value));
+        scope.log_generated(raw_fields(value));
         return value;
     }
 
     hegel_time_t draw_time(const TestCase& tc) {
         DrawScope scope(tc);
-        scope.log_request("time");
         hegel_time_t value{};
         scope.check_draw(
             hegel_generate_time(scope.ctx, scope.tc, hegel_time_t{0, 0, 0, 0},
                                 hegel_time_t{23, 59, 59, 999999}, &value),
             "hegel_generate_time");
-        scope.log_response(raw_fields(value));
+        scope.log_generated(raw_fields(value));
         return value;
     }
 
     hegel_datetime_t draw_datetime(const TestCase& tc) {
         DrawScope scope(tc);
-        scope.log_request("datetime");
         hegel_datetime_t value{};
         hegel_datetime_t min_value{{1, 1, 1}, {0, 0, 0, 0}};
         hegel_datetime_t max_value{{9999, 12, 31}, {23, 59, 59, 999999}};
         scope.check_draw(hegel_generate_datetime(scope.ctx, scope.tc, min_value,
                                                  max_value, &value),
                          "hegel_generate_datetime");
-        scope.log_response("{date=" + raw_fields(value.date) +
-                           ", time=" + raw_fields(value.time) + "}");
+        scope.log_generated("{date=" + raw_fields(value.date) +
+                            ", time=" + raw_fields(value.time) + "}");
         return value;
     }
 
     std::string draw_ipv4(const TestCase& tc) {
         DrawScope scope(tc);
-        scope.log_request("ipv4");
         std::array<uint8_t, 4> bytes{};
         scope.check_draw(hegel_generate_ipv4(scope.ctx, scope.tc, bytes.data()),
                          "hegel_generate_ipv4");
@@ -457,13 +443,12 @@ namespace hegel::impl {
             throw std::runtime_error("failed to format IPv4 address");
             // GCOVR_EXCL_STOP
         }
-        scope.log_response(buf);
+        scope.log_generated(buf);
         return buf;
     }
 
     std::string draw_ipv6(const TestCase& tc) {
         DrawScope scope(tc);
-        scope.log_request("ipv6");
         std::array<uint8_t, 16> bytes{};
         scope.check_draw(hegel_generate_ipv6(scope.ctx, scope.tc, bytes.data()),
                          "hegel_generate_ipv6");
@@ -474,7 +459,7 @@ namespace hegel::impl {
             throw std::runtime_error("failed to format IPv6 address");
             // GCOVR_EXCL_STOP
         }
-        scope.log_response(buf);
+        scope.log_generated(buf);
         return buf;
     }
 
@@ -547,13 +532,11 @@ namespace hegel::internal {
     int64_t draw_integer(const TestCase& tc, int64_t min_value,
                          int64_t max_value) {
         impl::DrawScope scope(tc);
-        scope.log_request("integer [" + std::to_string(min_value) + ", " +
-                          std::to_string(max_value) + "]");
         int64_t value = 0;
         scope.check_draw(hegel_generate_integer(scope.ctx, scope.tc, min_value,
                                                 max_value, &value),
                          "hegel_generate_integer");
-        scope.log_response(std::to_string(value));
+        scope.log_generated(std::to_string(value));
         return value;
     }
 
@@ -566,8 +549,6 @@ namespace hegel::internal {
                              static_cast<int64_t>(max_value)));
         }
         impl::DrawScope scope(tc);
-        scope.log_request("integer [" + std::to_string(min_value) + ", " +
-                          std::to_string(max_value) + "]");
         uint8_t min_bytes[big_u64_len];
         uint8_t max_bytes[big_u64_len];
         uint8_t out_bytes[big_u64_len];
@@ -580,19 +561,18 @@ namespace hegel::internal {
                                        out_bytes, big_u64_len, &out_len),
             "hegel_generate_integer_big");
         uint64_t value = decode_u64_le(out_bytes);
-        scope.log_response(std::to_string(value));
+        scope.log_generated(std::to_string(value));
         return value;
     }
 
     bool draw_boolean(const TestCase& tc, double p) {
         impl::DrawScope scope(tc);
-        scope.log_request("boolean p=" + std::to_string(p));
         bool value = false;
         scope.check_draw(hegel_generate_boolean(scope.ctx, scope.tc, p,
                                                 /*forced=*/false,
                                                 /*has_forced=*/false, &value),
                          "hegel_generate_boolean");
-        scope.log_response(value ? "true" : "false");
+        scope.log_generated(value ? "true" : "false");
         return value;
     }
 
@@ -601,15 +581,13 @@ namespace hegel::internal {
                       bool exclude_min, bool exclude_max,
                       double smallest_nonzero_magnitude) {
         impl::DrawScope scope(tc);
-        scope.log_request("float [" + std::to_string(min_value) + ", " +
-                          std::to_string(max_value) + "]");
         double value = 0.0;
         scope.check_draw(hegel_generate_float(
                              scope.ctx, scope.tc, width, min_value, max_value,
                              allow_nan, allow_infinity, exclude_min,
                              exclude_max, smallest_nonzero_magnitude, &value),
                          "hegel_generate_float");
-        scope.log_response(std::to_string(value));
+        scope.log_generated(std::to_string(value));
         return value;
     }
 
