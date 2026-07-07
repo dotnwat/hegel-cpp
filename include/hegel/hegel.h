@@ -57,17 +57,19 @@
  * }
  *
  * int main() {
- *     self_equality();
- *     return 0;
+ *     return hegel::run_all_tests();
  * }
  * @endcode
  *
  * Now build and run the test. You should see that this test passes.
  *
  * Let's look at what's happening in more detail. @ref HEGEL_TEST defines a
- * property test as an ordinary function, `self_equality`, which you invoke
- * from `main()` or from any test framework (a GoogleTest `TEST` body, for
- * example). Invoking it runs your test body many times (100, by default).
+ * property test as an ordinary function, `self_equality`, and registers it
+ * with hegel::run_all_tests(), which runs every test defined this way in
+ * the binary. You can also invoke the function individually — from `main()`
+ * or from any test framework (a GoogleTest `TEST` body, for example).
+ * Running the test executes your test body many times (100, by default).
+ *
  * The body receives a @TestCase, which provides a @tc{draw}() method for
  * drawing different values. This test draws a random integer and checks
  * that it should be equal to itself. The macro also names the test in
@@ -310,6 +312,32 @@ namespace hegel {
      */
     void test(const std::function<void(TestCase&)>& test_fn,
               const Settings& settings = {});
+
+    /**
+     * @brief Run every test defined with @ref HEGEL_TEST in this binary.
+     *
+     * Each test runs with its inline settings.
+     *
+     * @code{.cpp}
+     * int main() {
+     *     return hegel::run_all_tests();
+     * }
+     * @endcode
+     *
+     * @return 0 if every test passed, 1 otherwise
+     */
+    int run_all_tests();
+
+    /// @cond INTERNAL
+    namespace internal {
+        // Adds a HEGEL_TEST to the run_all_tests() registry during static
+        // initialization; always returns true.
+        // the only way the HEGEL_TEST macro can make something run before
+        // main() is to hang the call off the initializer of a namespace-scope
+        // variable
+        bool register_test(const char* name, void (*run)());
+    } // namespace internal
+    /// @endcond
 } // namespace hegel
 
 /**
@@ -330,6 +358,9 @@ namespace hegel {
  * Settings for the test are written inline after the name. They become the
  * function's default argument, and settings passed at the call site replace
  * them entirely.
+ *
+ * The test is also registered with the test runtime, so all Hegel tests within
+ * a translation unit can be run with hegel::run_all_tests().
  *
  * @code{.cpp}
  * HEGEL_TEST(addition_commutes, {.test_cases = 500})(hegel::TestCase& tc) {
@@ -355,6 +386,8 @@ namespace hegel {
         }                                                                      \
         ::hegel::test(hegel_test_body_##name, settings);                       \
     }                                                                          \
+    [[maybe_unused]] static const bool hegel_test_registered_##name =          \
+        ::hegel::internal::register_test(__FILE__ "::" #name, [] { name(); }); \
     static void hegel_test_body_##name
 
 /** @} */

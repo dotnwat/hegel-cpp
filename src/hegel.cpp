@@ -26,6 +26,7 @@
 #include <stdexcept>
 #include <string>
 #include <typeinfo>
+#include <vector>
 
 namespace hegel {
 
@@ -363,6 +364,44 @@ namespace hegel {
         throw std::runtime_error("\nHegel test failed with " +
                                  std::to_string(failure_count) +
                                  " distinct failures");
+    }
+
+    namespace internal {
+        namespace {
+            struct RegisteredTest {
+                const char* name;
+                void (*run)();
+            };
+
+            // Function-local static so registrations from other translation
+            // units' static initializers always find a constructed registry.
+            std::vector<RegisteredTest>& test_registry() {
+                static std::vector<RegisteredTest> registry;
+                return registry;
+            }
+        } // namespace
+
+        bool register_test(const char* name, void (*run)()) {
+            test_registry().push_back({name, run});
+            return true;
+        }
+    } // namespace internal
+
+    int run_all_tests() {
+        const auto& registry = internal::test_registry();
+        size_t failed = 0;
+        for (const internal::RegisteredTest& test : registry) {
+            try {
+                test.run();
+            } catch (const std::exception& e) {
+                failed++;
+                std::fprintf(stderr, "[ FAILED ] %s\n%s\n", test.name,
+                             e.what());
+            }
+        }
+        std::fprintf(stderr, "Ran %zu Hegel tests: %zu failed\n",
+                     registry.size(), failed);
+        return failed == 0 ? 0 : 1;
     }
 
 } // namespace hegel

@@ -12,6 +12,22 @@ HEGEL_TEST(addition_commutes, {.test_cases = 500})(hegel::TestCase& tc) {
 }
 ```
 
+Each `HEGEL_TEST` is also registered with the new `hegel::run_all_tests()`, which runs every test defined with the macro in a translation unit. It reports failures to stderr and returns 0 if everything passed (1 otherwise).
+
+You can run the test above in two ways:
+
+```cpp
+int main() {
+    return hegel::run_all_tests();
+}
+```
+```cpp
+int main() {
+    addition_commutes();
+    return 0;
+}
+```
+
 There are four new settings:
 
 - `database_key`: the key scoping which examples are stored in and replayed from the database. `HEGEL_TEST` fills it in automatically. Set it yourself when calling `hegel::test()` directly.

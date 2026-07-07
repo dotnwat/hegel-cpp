@@ -110,3 +110,7 @@ add_test(NAME test_gtest COMMAND test_gtest)
 set_tests_properties(test_gtest PROPERTIES
     PASS_REGULAR_EXPRESSION "actual:"
 )
+
+add_executable(test_run_all test_run_all.cpp)
+target_link_libraries(test_run_all PRIVATE hegel)
+add_test(NAME test_run_all COMMAND test_run_all)
