@@ -5,7 +5,7 @@
  *
  * Hegel is a property-based testing library for C++. Hegel is based on
  * [Hypothesis](https://github.com/hypothesisworks/hypothesis), using the
- * [Hegel](https://hegel.dev/) protocol.
+ * libhegel engine.
  *
  * @section getting_started Getting started
  *
@@ -313,6 +313,12 @@ namespace hegel {
 } // namespace hegel
 
 /**
+ * @defgroup test_macros Test definition macros
+ * @brief Macros for defining Hegel property tests.
+ * @{
+ */
+
+/**
  * @brief Define a Hegel property test.
  *
  * It expands to a function `name(hegel::Settings = ...)` that runs that body
@@ -350,3 +356,5 @@ namespace hegel {
         ::hegel::test(hegel_test_body_##name, settings);                       \
     }                                                                          \
     static void hegel_test_body_##name
+
+/** @} */
