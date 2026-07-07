@@ -39,15 +39,8 @@ namespace hegel {
             "variables, system time, or external random number generators.";
 
         // RAII guards for the libhegel handles. Each `*_free` is a no-op on
-        // NULL and never throws.
-        struct ContextGuard {
-            hegel_context_t* ctx = hegel_context_new();
-            ContextGuard() = default;
-            ~ContextGuard() { hegel_context_free(ctx); }
-            ContextGuard(const ContextGuard&) = delete;
-            ContextGuard& operator=(const ContextGuard&) = delete;
-        };
-
+        // NULL and never throws. (The error-reporting context is not guarded
+        // here: impl::thread_context() owns one per thread.)
         struct SettingsGuard {
             hegel_context_t* ctx;
             hegel_settings_t* s = nullptr;
@@ -152,9 +145,9 @@ namespace hegel {
                                    const std::function<void(TestCase&)>& fn) {
             TestCaseGuard tc_guard{ctx};
             tc_guard.tc = impl::test_case_from_blob(ctx, s, blob);
-            // Positional init (fields: ctx, tc, is_final, verbosity) so this
+            // Positional init (fields: tc, is_final, verbosity) so this
             // TU stays clean under a C++17 (HEGEL_REFLECTION=OFF) build.
-            impl::test_case::TestCaseData data{ctx, tc_guard.tc,
+            impl::test_case::TestCaseData data{tc_guard.tc,
                                                /*is_final=*/true, verbosity};
             TestCase tc_obj(&data);
             BodyOutcome outcome = run_body(fn, tc_obj);
@@ -231,8 +224,7 @@ namespace hegel {
               const Settings& settings) {
         impl::protocol::init_protocol_debug(settings.verbosity);
 
-        ContextGuard ctx_guard;
-        hegel_context_t* ctx = ctx_guard.ctx;
+        hegel_context_t* ctx = impl::thread_context();
 
         SettingsGuard settings_guard{ctx};
         settings_guard.s = impl::settings_new(ctx);
@@ -251,7 +243,7 @@ namespace hegel {
             if (tc_guard.tc == nullptr) {
                 break;
             }
-            impl::test_case::TestCaseData data{ctx, tc_guard.tc,
+            impl::test_case::TestCaseData data{tc_guard.tc,
                                                /*is_final=*/false,
                                                settings.verbosity};
             TestCase tc_obj(&data);

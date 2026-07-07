@@ -42,7 +42,7 @@ you to port a feature from there.
 ### Execution Model
 
 The library calls libhegel's C ABI (`hegel_*` functions) directly, in-process — no subprocess, no socket. `hegel::test()` (`src/hegel.cpp`) drives the run:
-1. Create a context + settings handle (`hegel_context_new`, `hegel_settings_new`); map `hegel::Settings` onto `hegel_settings_set_*`.
+1. Get this thread's error-reporting context (`impl::thread_context()`, one `hegel_context_t` per thread, mirroring hegel-rust) and a settings handle (`hegel_settings_new`); map `hegel::Settings` onto `hegel_settings_set_*`.
 2. `hegel_run_start` starts the engine on a worker thread inside libhegel.
 3. Loop `hegel_next_test_case` until it yields NULL; run the user body for each case and `hegel_mark_complete` it (VALID / INVALID / OVERRUN / INTERESTING).
 4. `hegel_run_result` reports passed / failed / errored. On failure, each counterexample blob is replayed via `hegel_test_case_from_blob` to reproduce the user's notes and the failing exception message.

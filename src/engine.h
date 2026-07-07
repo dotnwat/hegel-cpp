@@ -19,6 +19,10 @@ namespace hegel {
 
 namespace hegel::impl {
 
+    /// This thread's libhegel error-reporting context, created on first use
+    /// and freed when the thread exits.
+    hegel_context_t* thread_context();
+
     /// Most recent error message recorded on `ctx` (empty string if none).
     std::string last_error(hegel_context_t* ctx);
 
