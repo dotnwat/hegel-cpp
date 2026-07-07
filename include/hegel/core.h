@@ -65,6 +65,9 @@ namespace hegel::generators {
      */
     template <typename T> class Generator {
       public:
+        /// The type of value this generator produces.
+        using value_type = T;
+
         /// @cond INTERNAL
         Generator(IGenerator<T>* p) : inner_(p) {}
         Generator(std::shared_ptr<IGenerator<T>> p) : inner_(std::move(p)) {}
@@ -96,10 +99,10 @@ namespace hegel::generators {
          * @see flat_map()
          */
         template <typename F>
-        Generator<std::invoke_result_t<F, T>> map(F f) const {
+        Generator<std::invoke_result_t<F, T>> map(F&& f) const {
             using ResultType = std::invoke_result_t<F, T>;
             return Generator<ResultType>(
-                new MappedGenerator<T, ResultType>(inner_, std::move(f)));
+                new MappedGenerator<T, ResultType>(inner_, std::forward<F>(f)));
         }
 
         /**
@@ -124,14 +127,9 @@ namespace hegel::generators {
          * @see map(), text()
          */
         template <typename F> std::invoke_result_t<F, T> flat_map(F&& f) const {
-            // Relevant types here:
-            //     ResultType: some type
-            //     gen_fn_:   () -> T
-            //     F:         T -> Generator<ResultType>
-            //     Function return type: Generator<ResultType>
-            using ResultType =
-                decltype(std::declval<std::invoke_result_t<F, T>>().do_draw(
-                    std::declval<const TestCase&>()));
+            // F: T -> Generator<ResultType>; flat_map returns the same
+            // Generator<ResultType>.
+            using ResultType = typename std::invoke_result_t<F, T>::value_type;
             auto inner = inner_;
             return compose([inner, f = std::forward<F>(f)](
                                const TestCase& tc) -> ResultType {
