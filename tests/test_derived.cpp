@@ -71,23 +71,29 @@ TEST(DefaultGenerator, StructTypes) {
     EXPECT_NO_THROW(gs::default_generator<Person>());
 }
 
+// The shift puts every mapped value outside the source range, so a map()
+// that failed to apply f would fail the bounds check on every draw.
 TEST(Map, TransformsPrimitiveDraws) {
     hegel::test([](hegel::TestCase& tc) {
-        auto squared =
+        auto shifted =
             gs::integers<int>({.min_value = 0, .max_value = 10}).map([](int x) {
-                return x * x;
+                return x + 1000;
             });
-        int value = tc.draw(squared);
-        EXPECT_GE(value, 0);
-        EXPECT_LE(value, 100);
+        int value = tc.draw(shifted);
+        EXPECT_GE(value, 1000);
+        EXPECT_LE(value, 1010);
     });
 }
 
+// Pinning x makes the mapped value exact, so this checks f really receives
+// the drawn struct and returns the selected field.
 TEST(Map, TransformsDerivedStructDraws) {
     hegel::test([](hegel::TestCase& tc) {
-        auto mapped = gs::default_generator<Point>().map(
-            [](const Point& p) { return p.x; });
-        (void)tc.draw(mapped);
+        auto x_only = gs::default_generator<Point>()
+                          .override(gs::field<&Point::x>(gs::just(42.0)))
+                          .map([](const Point& p) { return p.x; });
+        double value = tc.draw(x_only);
+        EXPECT_EQ(value, 42.0);
     });
 }
 
