@@ -307,11 +307,15 @@ namespace hegel {
      *                TestCase which it uses to draw values, make
      *                assumptions, and record notes.
      * @param settings Configuration settings (test count, debug mode, etc.)
+     * @param failure_blobs The base64 blobs encoding the engine choices that
+     led to failures. Multiple blobs can be passed in for bookkeeping, but only
+     the first one is run.
      * @throws std::runtime_error if any test case fails
      * @see Settings for configuration settings
      */
     void test(const std::function<void(TestCase&)>& test_fn,
-              const Settings& settings = {});
+              const Settings& settings = {},
+              const std::vector<std::string>& failure_blobs = {});
 
     /**
      * @brief Run every test defined with @ref HEGEL_TEST in this binary.
