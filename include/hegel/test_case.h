@@ -1,5 +1,6 @@
 #pragma once
 
+#include <functional>
 #include <string_view>
 
 namespace hegel::impl::test_case {
@@ -92,6 +93,27 @@ namespace hegel {
          * @endcode
          */
         void target(double score, std::string_view label = "") const;
+
+        /**
+         * @brief Run @p body in an engine-managed loop.
+         *
+         * The engine decides how many iterations to run, exploring and
+         * shrinking the count like any other drawn quantity. Control returns to
+         * the caller once the loop completes. A rejected iteration (via
+         * @c assume / @c reject) is discarded and the loop continues; any other
+         * exception propagates out as a failure.
+         *
+         * @param body Callable invoked once per iteration.
+         *
+         * @code{.cpp}
+         * int total = 0;
+         * tc.repeat([&] {
+         *     total += tc.draw(gs::integers<int>({.min_value = 0}));
+         *     if (total < 0) throw std::runtime_error("overflow");
+         * });
+         * @endcode
+         */
+        void repeat(const std::function<void()>& body) const;
 
         /**
          * @brief Record a message that will be printed on the final replay
