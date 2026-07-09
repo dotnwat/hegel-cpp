@@ -10,6 +10,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <hegel.h>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -122,6 +123,7 @@ namespace hegel::impl {
     hegel_date_t draw_date(const TestCase& tc);
     hegel_time_t draw_time(const TestCase& tc);
     hegel_datetime_t draw_datetime(const TestCase& tc);
+    std::string draw_uuid(const TestCase& tc, std::optional<uint8_t> version);
     /// Dotted-quad (v4) / RFC 5952 colon-hex (v6) text form.
     std::string draw_ipv4(const TestCase& tc);
     std::string draw_ipv6(const TestCase& tc);

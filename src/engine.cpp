@@ -11,6 +11,7 @@
 #include <cstdint>
 #include <iostream>
 #include <limits>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -481,6 +482,28 @@ namespace hegel::impl {
         }
         scope.log_generated(buf);
         return buf;
+    }
+
+    std::string draw_uuid(const TestCase& tc, std::optional<uint8_t> version) {
+        DrawScope scope(tc);
+        std::array<uint8_t, 16> bytes{};
+        scope.check_draw(
+            hegel_generate_uuid(scope.ctx, scope.tc, version.value_or(0),
+                                version.has_value(), bytes.data()),
+            "hegel_generate_uuid");
+        // Canonical 8-4-4-4-12 hex, with hyphens before bytes 4, 6, 8, 10.
+        static constexpr char kHex[] = "0123456789abcdef";
+        std::string value;
+        value.reserve(36);
+        for (size_t i = 0; i < bytes.size(); ++i) {
+            if (i == 4 || i == 6 || i == 8 || i == 10) {
+                value.push_back('-');
+            }
+            value.push_back(kHex[bytes[i] >> 4]);
+            value.push_back(kHex[bytes[i] & 0x0F]);
+        }
+        scope.log_generated(value);
+        return value;
     }
 
     void target(const TestCase& tc, double score, const char* label) {
