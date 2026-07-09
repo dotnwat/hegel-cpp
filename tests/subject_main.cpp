@@ -133,7 +133,7 @@ namespace {
                     throw std::runtime_error("silly error");
                 }
             },
-            {.database = hegel::Database::disabled(), .print_blob = true});
+            {.print_blob = true, .database = hegel::Database::disabled()});
     }
 } // namespace
 
