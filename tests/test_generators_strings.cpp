@@ -28,7 +28,7 @@ TEST(Formats, DrawAll) {
             (void)tc.draw(gs::times());
             (void)tc.draw(gs::datetimes());
             (void)tc.draw(gs::from_regex("[a-z]{1,5}"));
-            (void)tc.draw(gs::from_regex("[A-Z]{2}", true));
+            (void)tc.draw(gs::from_regex("[A-Z]{2}", false));
             // ip_addresses: v4, v6, and the default (either) factory branches.
             (void)tc.draw(gs::ip_addresses({.v = 4}));
             (void)tc.draw(gs::ip_addresses({.v = 6}));
@@ -85,12 +85,46 @@ TEST(Formats, RegexNonFinalAnchorHonored) {
     const std::regex oracle(R"(\bfoo\b)");
     hegel::test(
         [&](hegel::TestCase& tc) {
-            std::string s = tc.draw(gs::from_regex(R"(\bfoo\b)"));
+            std::string s = tc.draw(gs::from_regex(R"(\bfoo\b)", false));
             EXPECT_TRUE(std::regex_search(s, oracle))
                 << "generated string has no standalone \"foo\": " << s;
         },
         hegel::Settings{.test_cases = 100,
                         .database = hegel::Database::disabled()});
+}
+
+// By default the entire generated string must match the pattern, as if
+// anchored with ^...$ — no surrounding characters are permitted.
+TEST(Formats, RegexDefaultsToFullmatch) {
+    const std::regex oracle("[A-Z]{2}-[0-9]{4}");
+    hegel::test(
+        [&](hegel::TestCase& tc) {
+            std::string s = tc.draw(gs::from_regex("[A-Z]{2}-[0-9]{4}"));
+            EXPECT_TRUE(std::regex_match(s, oracle))
+                << "generated string is not a full match: " << s;
+        },
+        hegel::Settings{.test_cases = 100,
+                        .database = hegel::Database::disabled()});
+}
+
+// fullmatch = false restores contains-a-match behavior: every generated
+// string contains a match, but may carry arbitrary prefix/suffix characters.
+// Padding around the match must actually occur across the run — otherwise this
+// would pass even if the flag were ignored, since a full match also satisfies
+// regex_search.
+TEST(Formats, RegexFullmatchFalseAllowsContains) {
+    const std::regex oracle("[A-Z]{2}-[0-9]{4}");
+    bool saw_padding = false;
+    hegel::test(
+        [&](hegel::TestCase& tc) {
+            std::string s = tc.draw(gs::from_regex("[A-Z]{2}-[0-9]{4}", false));
+            EXPECT_TRUE(std::regex_search(s, oracle))
+                << "generated string contains no match: " << s;
+            saw_padding |= !std::regex_match(s, oracle);
+        },
+        hegel::Settings{.test_cases = 100,
+                        .database = hegel::Database::disabled()});
+    EXPECT_TRUE(saw_padding);
 }
 
 // uuids() produces the canonical hyphenated 8-4-4-4-12 lowercase-hex form.
