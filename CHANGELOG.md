@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.3 - 2026-07-09
+
+This patch bumps our pinned `libhegel` ([hegel-rust](hegeldev/hegel-rust)) from [0.27.0](https://github.com/hegeldev/hegel-rust/releases/tag/v0.27.0) to [0.28.0](https://github.com/hegeldev/hegel-rust/releases/tag/v0.28.0).
+
 ## 0.6.2 - 2026-07-09
 
 This patch adds the ability to reproduce a specific failing example from its
