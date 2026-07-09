@@ -307,11 +307,15 @@ namespace hegel {
      *                TestCase which it uses to draw values, make
      *                assumptions, and record notes.
      * @param settings Configuration settings (test count, debug mode, etc.)
+     * @param failure_blobs The base64 blobs encoding the engine choices that
+     led to failures. Multiple blobs can be passed in for bookkeeping, but only
+     the first one is run.
      * @throws std::runtime_error if any test case fails
      * @see Settings for configuration settings
      */
     void test(const std::function<void(TestCase&)>& test_fn,
-              const Settings& settings = {});
+              const Settings& settings = {},
+              const std::vector<std::string>& failure_blobs = {});
 
     /**
      * @brief Run every test defined with @ref HEGEL_TEST in this binary.
@@ -336,6 +340,10 @@ namespace hegel {
         // main() is to hang the call off the initializer of a namespace-scope
         // variable
         bool register_test(const char* name, void (*run)());
+        // add a blob for a test to run
+        bool register_blob(const char* name, std::vector<const char*> blobs);
+        // look up the failure blobs associated with a test
+        std::vector<std::string> reproduce_blobs_for(const char* name);
     } // namespace internal
     /// @endcond
 } // namespace hegel
@@ -376,6 +384,8 @@ namespace hegel {
  * addition_commutes();                  // runs with .test_cases = 500
  * addition_commutes({.test_cases = 5}); // call-site Settings take over
  * @endcode
+ *
+ * @see HEGEL_REPRODUCE_FAILURE to replay a specific failing example.
  */
 #define HEGEL_TEST(name, ...)                                                  \
     static void hegel_test_body_##name(::hegel::TestCase&);                    \
@@ -384,10 +394,36 @@ namespace hegel {
         if (!settings.database_key.has_value()) {                              \
             settings.database_key = __FILE__ "::" #name;                       \
         }                                                                      \
-        ::hegel::test(hegel_test_body_##name, settings);                       \
+        ::hegel::test(                                                         \
+            hegel_test_body_##name, settings,                                  \
+            ::hegel::internal::reproduce_blobs_for(__FILE__ "::" #name));      \
     }                                                                          \
     [[maybe_unused]] static const bool hegel_test_registered_##name =          \
         ::hegel::internal::register_test(__FILE__ "::" #name, [] { name(); }); \
     static void hegel_test_body_##name
 
+/**
+ * @brief Replay a failing example for a @ref HEGEL_TEST from its blob.
+ *
+ * Place this above the matching HEGEL_TEST, keyed by the same name. The test
+ * then replays the given reproduction blob (as printed by Settings::print_blob)
+ * instead of generating new cases. Delete the annotation to return to a normal
+ * run.
+ *
+ * At least one blob is required. Additional blobs are accepted for bookkeeping,
+ * but only the first is replayed.
+ *
+ * @code{.cpp}
+ * HEGEL_REPRODUCE_FAILURE(addition_commutes, "AAEAAAAACgEAAAAA")
+ * HEGEL_TEST(addition_commutes)(hegel::TestCase& tc) {
+ *     // ...
+ * }
+ * @endcode
+ *
+ * @see HEGEL_TEST
+ */
+#define HEGEL_REPRODUCE_FAILURE(name, blob, ...)                               \
+    [[maybe_unused]] static const bool hegel_reproduce_registered_##name =     \
+        ::hegel::internal::register_blob(__FILE__ "::" #name,                  \
+                                         {blob, __VA_ARGS__});
 /** @} */

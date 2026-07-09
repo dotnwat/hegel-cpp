@@ -166,6 +166,60 @@ TEST(Floats, NanAndInfinitySurviveGeneration) {
     EXPECT_TRUE(saw_neg_inf) << "-infinity never generated";
 }
 
+TEST(FailureBlobs, BlobDoesNotReproduceFailure) {
+    try {
+        hegel::test(
+            [&](hegel::TestCase& tc) {
+                int n = tc.draw(gs::integers<int>());
+                if (n < 50) {
+                    throw std::runtime_error("fail");
+                }
+            },
+            {}, {"AAEAAAAACgEAAAAy"});
+        FAIL();
+    } catch (const std::runtime_error& e) {
+        EXPECT_EQ(std::string(e.what()),
+                  "The failure blob did not reproduce an error");
+    }
+}
+
+TEST(FailureBlobs, InvalidBlob) {
+    try {
+        hegel::test(
+            [&](hegel::TestCase& tc) {
+                int n = tc.draw(gs::integers<int>());
+                if (n < 50) {
+                    throw std::runtime_error("fail");
+                }
+            },
+            {}, {"A"});
+        FAIL();
+    } catch (const std::runtime_error& e) {
+        EXPECT_EQ(std::string(e.what()),
+                  "invalid argument: hegel_test_case_from_blob: the supplied "
+                  "failure blob could not be decoded. It may be corrupt or "
+                  "from an incompatible Hegel version.");
+    }
+}
+
+HEGEL_REPRODUCE_FAILURE(obvious_fail, "AAEAAAAACgEAAAAA", "invalid")
+HEGEL_TEST(obvious_fail,
+           {.phases = {hegel::Phase::Explicit}})(hegel::TestCase& tc) {
+    int n = tc.draw(gs::integers<int>());
+    if (n < 50) {
+        throw std::runtime_error("fail");
+    }
+}
+
+TEST(FailureBlobs, BlobReproduceFailure) {
+    try {
+        obvious_fail();
+        FAIL();
+    } catch (const std::runtime_error& e) {
+        EXPECT_EQ(std::string(e.what()), "fail");
+    }
+}
+
 TEST(Settings, VerbosityToString) {
     using hegel::Verbosity;
     EXPECT_STREQ(hegel::verbosity_to_string(Verbosity::Quiet), "quiet");

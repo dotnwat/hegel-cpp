@@ -21,6 +21,12 @@ namespace {
     }
 } // namespace
 
+TEST(Output, PrintBlob) {
+    SubprocessResult r = run_scenario("print_blob");
+    EXPECT_NE(r.exit_code, 0);
+    assert_matches_regex(r.stderr_data, R"(Failure blob:)");
+}
+
 TEST(Output, FailingTest) {
     SubprocessResult r = run_scenario("failing");
     EXPECT_NE(r.exit_code, 0);
