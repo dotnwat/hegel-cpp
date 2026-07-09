@@ -1,6 +1,8 @@
 #include <gtest/gtest.h>
 
+#include <regex>
 #include <stdexcept>
+#include <string>
 
 #include <hegel/hegel.h>
 
@@ -66,6 +68,22 @@ TEST(Formats, InvalidRegexThrows) {
 
 TEST(Formats, UnknownCodecThrows) {
     EXPECT_THROW(gs::text({.codec = "no-such-codec"}), std::invalid_argument);
+}
+
+// A word-boundary anchor in a non-final position constrains the surrounding
+// characters, so every generated string must contain a standalone "foo". Each
+// draw is searched with the same pattern it came from, using std::regex as the
+// oracle.
+TEST(Formats, RegexNonFinalAnchorHonored) {
+    const std::regex oracle(R"(\bfoo\b)");
+    hegel::test(
+        [&](hegel::TestCase& tc) {
+            std::string s = tc.draw(gs::from_regex(R"(\bfoo\b)"));
+            EXPECT_TRUE(std::regex_search(s, oracle))
+                << "generated string has no standalone \"foo\": " << s;
+        },
+        hegel::Settings{.test_cases = 100,
+                        .database = hegel::Database::disabled()});
 }
 
 int main(int argc, char** argv) {
