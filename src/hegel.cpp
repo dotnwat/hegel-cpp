@@ -23,6 +23,7 @@
 #include <cxxabi.h>
 #include <exception>
 #include <functional>
+#include <map>
 #include <stdexcept>
 #include <string>
 #include <typeinfo>
@@ -413,11 +414,29 @@ namespace hegel {
                 static std::vector<RegisteredTest> registry;
                 return registry;
             }
+
+            std::map<std::string, std::string>& blob_registry() {
+                static std::map<std::string, std::string> registry;
+                return registry;
+            }
         } // namespace
 
         bool register_test(const char* name, void (*run)()) {
             test_registry().push_back({name, run});
             return true;
+        }
+
+        bool register_blob(const char* name, std::vector<const char*> blobs) {
+            blob_registry().insert({name, blobs.front()});
+            return true;
+        }
+
+        std::vector<std::string> reproduce_blobs_for(const char* name) {
+            auto blob = blob_registry().find(name);
+            if (blob == blob_registry().end()) {
+                return {};
+            }
+            return {blob->second};
         }
     } // namespace internal
 

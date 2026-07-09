@@ -202,16 +202,18 @@ TEST(FailureBlobs, InvalidBlob) {
     }
 }
 
+HEGEL_REPRODUCE_FAILURE(obvious_fail, "AAEAAAAACgEAAAAA", "invalid")
+HEGEL_TEST(obvious_fail,
+           {.phases = {hegel::Phase::Explicit}})(hegel::TestCase& tc) {
+    int n = tc.draw(gs::integers<int>());
+    if (n < 50) {
+        throw std::runtime_error("fail");
+    }
+}
+
 TEST(FailureBlobs, BlobReproduceFailure) {
     try {
-        hegel::test(
-            [&](hegel::TestCase& tc) {
-                int n = tc.draw(gs::integers<int>());
-                if (n < 50) {
-                    throw std::runtime_error("fail");
-                }
-            },
-            {}, {"AAEAAAAACgEAAAAA"});
+        obvious_fail();
         FAIL();
     } catch (const std::runtime_error& e) {
         EXPECT_EQ(std::string(e.what()), "fail");
