@@ -13,6 +13,8 @@ namespace hegel {
         }
     }
 
+    void TestCase::reject() const { throw internal::HegelReject(); }
+
     void TestCase::note(std::string_view message) const {
         if (data_->should_log()) {
             std::cerr << message << std::endl;

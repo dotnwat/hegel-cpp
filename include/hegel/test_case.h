@@ -62,6 +62,19 @@ namespace hegel {
         void assume(bool condition) const;
 
         /**
+         * @brief Reject the current test case unconditionally.
+         *
+         * Equivalent to @c assume(false), but marked @c [[noreturn]] so code
+         * after the call is statically known to be unreachable.
+         *
+         * @code{.cpp}
+         * auto n = tc.draw(gs::integers<int>());
+         * unsigned u = n >= 0 ? static_cast<unsigned>(n) : tc.reject();
+         * @endcode
+         */
+        [[noreturn]] void reject() const;
+
+        /**
          * @brief Record a message that will be printed on the final replay
          *        of a failing test case.
          *
