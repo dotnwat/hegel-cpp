@@ -95,6 +95,13 @@ TEST(Deferred, DrawBeforeSetThrows) {
         std::runtime_error);
 }
 
+// set() installs the implementation exactly once; a second call is an error.
+TEST(Deferred, SetTwiceThrows) {
+    auto def = gs::deferred<int>();
+    def.set(gs::just(1));
+    EXPECT_THROW(def.set(gs::just(2)), std::runtime_error);
+}
+
 // ---------------------------------------------------------------------------
 // just / sampled_from with opaque (non-serializable) types
 // ---------------------------------------------------------------------------
