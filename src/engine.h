@@ -113,6 +113,8 @@ namespace hegel::impl {
     // generators.cpp. (The template-visible ones live in
     // hegel::internal — see include/hegel/internal.h.)
 
+    void target(const TestCase& tc, double score, const char* label);
+
     std::string draw_string(const TestCase& tc,
                             const hegel_string_generator_t* generator);
     std::vector<uint8_t> draw_bytes(const TestCase& tc, uint64_t min_size,

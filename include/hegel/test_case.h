@@ -75,6 +75,25 @@ namespace hegel {
         [[noreturn]] void reject() const;
 
         /**
+         * @brief Record a score for the engine's targeted-search phase to
+         *        maximize.
+         *
+         * Higher scores are treated as "more interesting." The engine biases
+         * later test cases toward inputs that produced higher scores under the
+         * same @p label. Has no effect unless the Target phase is enabled.
+         *
+         * @param score The observation to maximize. Must be finite.
+         * @param label Distinguishes independent targeting goals. Each label
+         *              may be recorded at most once per test case.
+         *
+         * @code{.cpp}
+         * auto n = tc.draw(gs::integers<int>({.min_value = 0}));
+         * tc.target(static_cast<double>(n));
+         * @endcode
+         */
+        void target(double score, std::string_view label = "") const;
+
+        /**
          * @brief Record a message that will be printed on the final replay
          *        of a failing test case.
          *

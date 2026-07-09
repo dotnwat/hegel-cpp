@@ -483,6 +483,26 @@ namespace hegel::impl {
         return buf;
     }
 
+    void target(const TestCase& tc, double score, const char* label) {
+        DrawScope scope(tc);
+        hegel_result_t rc =
+            hegel_target(scope.ctx, scope.tc, score, label);
+        if (rc == HEGEL_OK) {
+            return;
+        }
+        if (rc == HEGEL_E_STOP_TEST) {
+            throw internal::HegelStopTest();
+        }
+        // A non-finite score or a duplicate label is a usage error.
+        if (rc == HEGEL_E_INVALID_ARG) {
+            throw std::invalid_argument(last_error(scope.ctx));
+        }
+        // GCOVR_EXCL_START
+        throw std::runtime_error(std::string("hegel_target failed (") +
+                                 rc_label(rc) + "): " + last_error(scope.ctx));
+        // GCOVR_EXCL_STOP
+    }
+
 } // namespace hegel::impl
 
 namespace hegel::internal {
