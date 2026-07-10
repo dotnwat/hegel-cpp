@@ -399,8 +399,8 @@ namespace hegel::impl {
         DrawScope scope(tc);
         StringResultGuard guard{scope.ctx};
         scope.raise_for_rc(hegel_generate_string(scope.ctx, scope.tc, generator,
-                                               &guard.result),
-                         "hegel_generate_string");
+                                                 &guard.result),
+                           "hegel_generate_string");
         std::string value(guard.result.data, guard.result.len);
         scope.log_generated("\"" + value + "\"");
         return value;
@@ -411,8 +411,8 @@ namespace hegel::impl {
         DrawScope scope(tc);
         BytesResultGuard guard{scope.ctx};
         scope.raise_for_rc(hegel_generate_bytes(scope.ctx, scope.tc, min_size,
-                                              max_size, &guard.result),
-                         "hegel_generate_bytes");
+                                                max_size, &guard.result),
+                           "hegel_generate_bytes");
         std::vector<uint8_t> value(guard.result.data,
                                    guard.result.data + guard.result.len);
         scope.log_generated("<" + std::to_string(value.size()) + " bytes>");
@@ -446,9 +446,10 @@ namespace hegel::impl {
         hegel_datetime_t value{};
         hegel_datetime_t min_value{{1, 1, 1}, {0, 0, 0, 0}};
         hegel_datetime_t max_value{{9999, 12, 31}, {23, 59, 59, 999999}};
-        scope.raise_for_rc(hegel_generate_datetime(scope.ctx, scope.tc, min_value,
-                                                 max_value, &value),
-                         "hegel_generate_datetime");
+        scope.raise_for_rc(hegel_generate_datetime(scope.ctx, scope.tc,
+                                                   min_value, max_value,
+                                                   &value),
+                           "hegel_generate_datetime");
         scope.log_generated("{date=" + raw_fields(value.date) +
                             ", time=" + raw_fields(value.time) + "}");
         return value;
@@ -457,8 +458,9 @@ namespace hegel::impl {
     std::string draw_ipv4(const TestCase& tc) {
         DrawScope scope(tc);
         std::array<uint8_t, 4> bytes{};
-        scope.raise_for_rc(hegel_generate_ipv4(scope.ctx, scope.tc, bytes.data()),
-                         "hegel_generate_ipv4");
+        scope.raise_for_rc(
+            hegel_generate_ipv4(scope.ctx, scope.tc, bytes.data()),
+            "hegel_generate_ipv4");
         char buf[INET_ADDRSTRLEN];
         if (inet_ntop(AF_INET, bytes.data(), buf, sizeof(buf)) == nullptr) {
             // 4 bytes always format; not reachable.
@@ -473,8 +475,9 @@ namespace hegel::impl {
     std::string draw_ipv6(const TestCase& tc) {
         DrawScope scope(tc);
         std::array<uint8_t, 16> bytes{};
-        scope.raise_for_rc(hegel_generate_ipv6(scope.ctx, scope.tc, bytes.data()),
-                         "hegel_generate_ipv6");
+        scope.raise_for_rc(
+            hegel_generate_ipv6(scope.ctx, scope.tc, bytes.data()),
+            "hegel_generate_ipv6");
         char buf[INET6_ADDRSTRLEN];
         if (inet_ntop(AF_INET6, bytes.data(), buf, sizeof(buf)) == nullptr) {
             // 16 bytes always format; not reachable.
@@ -489,10 +492,10 @@ namespace hegel::impl {
     std::string draw_uuid(const TestCase& tc, std::optional<uint8_t> version) {
         DrawScope scope(tc);
         std::array<uint8_t, 16> bytes{};
-        scope.raise_for_rc(hegel_generate_uuid(scope.ctx, scope.tc,
-                                             version.value_or(0),
-                                             version.has_value(), bytes.data()),
-                         "hegel_generate_uuid");
+        scope.raise_for_rc(
+            hegel_generate_uuid(scope.ctx, scope.tc, version.value_or(0),
+                                version.has_value(), bytes.data()),
+            "hegel_generate_uuid");
         // Canonical 8-4-4-4-12 hex, with hyphens before bytes 4, 6, 8, 10.
         static constexpr char kHex[] = "0123456789abcdef";
         std::string value;
@@ -577,16 +580,16 @@ namespace hegel::internal {
     void stop_span(const TestCase& tc, bool discard) {
         impl::DrawScope scope(tc);
         scope.raise_for_rc(hegel_stop_span(scope.ctx, scope.tc, discard),
-                         "hegel_stop_span");
+                           "hegel_stop_span");
     }
 
     int64_t draw_integer(const TestCase& tc, int64_t min_value,
                          int64_t max_value) {
         impl::DrawScope scope(tc);
         int64_t value = 0;
-        scope.raise_for_rc(hegel_generate_integer(scope.ctx, scope.tc, min_value,
-                                                max_value, &value),
-                         "hegel_generate_integer");
+        scope.raise_for_rc(hegel_generate_integer(scope.ctx, scope.tc,
+                                                  min_value, max_value, &value),
+                           "hegel_generate_integer");
         scope.log_generated(std::to_string(value));
         return value;
     }
@@ -620,9 +623,9 @@ namespace hegel::internal {
         impl::DrawScope scope(tc);
         bool value = false;
         scope.raise_for_rc(hegel_generate_boolean(scope.ctx, scope.tc, p,
-                                                /*forced=*/false,
-                                                /*has_forced=*/false, &value),
-                         "hegel_generate_boolean");
+                                                  /*forced=*/false,
+                                                  /*has_forced=*/false, &value),
+                           "hegel_generate_boolean");
         scope.log_generated(value ? "true" : "false");
         return value;
     }
@@ -634,10 +637,10 @@ namespace hegel::internal {
         impl::DrawScope scope(tc);
         double value = 0.0;
         scope.raise_for_rc(hegel_generate_float(
-                             scope.ctx, scope.tc, width, min_value, max_value,
-                             allow_nan, allow_infinity, exclude_min,
-                             exclude_max, smallest_nonzero_magnitude, &value),
-                         "hegel_generate_float");
+                               scope.ctx, scope.tc, width, min_value, max_value,
+                               allow_nan, allow_infinity, exclude_min,
+                               exclude_max, smallest_nonzero_magnitude, &value),
+                           "hegel_generate_float");
         scope.log_generated(std::to_string(value));
         return value;
     }
@@ -647,8 +650,8 @@ namespace hegel::internal {
         impl::DrawScope scope(tc);
         int64_t collection_id = 0;
         scope.raise_for_rc(hegel_new_collection(scope.ctx, scope.tc, min_size,
-                                              max_size, &collection_id),
-                         "hegel_new_collection");
+                                                max_size, &collection_id),
+                           "hegel_new_collection");
         return collection_id;
     }
 
