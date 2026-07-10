@@ -78,8 +78,8 @@ TEST(Deferred, RecursiveTreeGenerates) {
         hegel::Settings{
             .test_cases = 50,
             .derandomize = true,
-            .suppress_health_check = {hegel::HealthCheck::FilterTooMuch},
-            .database = hegel::Database::disabled()}));
+            .database = hegel::Database::disabled(),
+            .suppress_health_check = {hegel::HealthCheck::FilterTooMuch}}));
 }
 
 // Drawing from a handle before set() has supplied an implementation is an

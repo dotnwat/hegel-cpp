@@ -42,8 +42,8 @@ TEST(Reject, DoesNotReturn) {
         hegel::Settings{
             .test_cases = 20,
             .derandomize = true,
-            .suppress_health_check = {hegel::HealthCheck::FilterTooMuch},
-            .database = hegel::Database::disabled()}));
+            .database = hegel::Database::disabled(),
+            .suppress_health_check = {hegel::HealthCheck::FilterTooMuch}}));
 }
 
 // ---------------------------------------------------------------------------
@@ -172,7 +172,7 @@ TEST(Loop, RejectInsideContinues) {
         hegel::Settings{
             .test_cases = 100,
             .derandomize = true,
-            .suppress_health_check = {hegel::HealthCheck::FilterTooMuch},
-            .database = hegel::Database::disabled()});
+            .database = hegel::Database::disabled(),
+            .suppress_health_check = {hegel::HealthCheck::FilterTooMuch}});
     EXPECT_TRUE(completed);
 }

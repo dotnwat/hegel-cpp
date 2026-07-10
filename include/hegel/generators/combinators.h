@@ -300,7 +300,11 @@ namespace hegel::generators {
 
         /**
          * @brief Return a handle that delegates to whatever is later passed to
-         *        set(). May be called multiple times.
+         *        set(). May be called multiple times. Drawing from it before
+         * set() is called throws.
+         *
+         * @return A Generator that delegates to the implementation installed by
+         *   set().
          */
         Generator<T> generator() const {
             return Generator<T>(new DeferredGenerator<T>(slot_));
@@ -312,6 +316,8 @@ namespace hegel::generators {
          * All handles previously returned by generator() delegate to @p gen.
          * May be called only once. A second call throws. Drawing from a handle
          * before set() is called throws.
+         *
+         * @param gen The generator to install as the implementation.
          */
         void set(Generator<T> gen) {
             if (*slot_) {
