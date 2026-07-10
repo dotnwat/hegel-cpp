@@ -337,7 +337,8 @@ namespace hegel::generators {
      * auto tree = gs::deferred<Tree>();
      * auto leaf = gs::integers<int>().map([](int v) { return Tree{v, {}}; });
      * auto branch = gs::compose([tree](const hegel::TestCase& tc) {
-     *     return Tree{0, {tc.draw(tree.generator()), tc.draw(tree.generator())}};
+     *     return Tree{0, {tc.draw(tree.generator()),
+     * tc.draw(tree.generator())}};
      * });
      * tree.set(gs::one_of<Tree>({leaf, branch}));
      * @endcode
