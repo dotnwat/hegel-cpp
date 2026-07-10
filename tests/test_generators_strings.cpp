@@ -1,3 +1,7 @@
+// String and format generators: text, characters, from_regex, emails, urls,
+// domains, dates/times/datetimes, ip_addresses, uuids, binary — drawing and
+// parameter validation.
+
 #include <gtest/gtest.h>
 
 #include <regex>
@@ -29,6 +33,9 @@ TEST(Formats, DrawAll) {
             (void)tc.draw(gs::ip_addresses({.v = 4}));
             (void)tc.draw(gs::ip_addresses({.v = 6}));
             (void)tc.draw(gs::ip_addresses());
+            // uuids: any version, plus each explicit RFC 4122 version.
+            (void)tc.draw(gs::uuids());
+            (void)tc.draw(gs::uuids({.version = 4}));
 
             // characters() with each filtering field. Values are ones the
             // engine accepts; categories and exclude_categories are mutually
@@ -120,7 +127,56 @@ TEST(Formats, RegexFullmatchFalseAllowsContains) {
     EXPECT_TRUE(saw_padding);
 }
 
-int main(int argc, char** argv) {
-    ::testing::InitGoogleTest(&argc, argv);
-    return RUN_ALL_TESTS();
+// uuids() produces the canonical hyphenated 8-4-4-4-12 lowercase-hex form.
+TEST(Formats, UuidCanonicalForm) {
+    const std::regex oracle(
+        "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$");
+    hegel::test(
+        [&](hegel::TestCase& tc) {
+            std::string u = tc.draw(gs::uuids());
+            EXPECT_TRUE(std::regex_match(u, oracle))
+                << "not a canonical UUID: " << u;
+        },
+        hegel::Settings{.test_cases = 100,
+                        .database = hegel::Database::disabled()});
+}
+
+// A requested version is forced into the RFC 4122 version nibble (the first
+// hex digit of the third group).
+TEST(Formats, UuidVersionForced) {
+    hegel::test(
+        [&](hegel::TestCase& tc) {
+            std::string u = tc.draw(gs::uuids({.version = 4}));
+            EXPECT_EQ(u[14], '4') << "version nibble not forced: " << u;
+        },
+        hegel::Settings{.test_cases = 100,
+                        .database = hegel::Database::disabled()});
+}
+
+// A version outside the RFC 4122 range (1-5) is rejected at construction.
+TEST(Formats, UuidInvalidVersionThrows) {
+    EXPECT_THROW(gs::uuids({.version = 0}), std::invalid_argument);
+    EXPECT_THROW(gs::uuids({.version = 6}), std::invalid_argument);
+}
+
+TEST(Validation, TextMaxSizeLessThanMinSize) {
+    EXPECT_THROW(gs::text({.min_size = 10, .max_size = 5}),
+                 std::invalid_argument);
+}
+
+TEST(Validation, BinaryMaxSizeLessThanMinSize) {
+    EXPECT_THROW(gs::binary({.min_size = 10, .max_size = 5}),
+                 std::invalid_argument);
+}
+
+TEST(Validation, DomainsMaxLengthTooSmall) {
+    EXPECT_THROW(gs::domains({.max_length = 3}), std::invalid_argument);
+}
+
+TEST(Validation, DomainsMaxLengthTooLarge) {
+    EXPECT_THROW(gs::domains({.max_length = 256}), std::invalid_argument);
+}
+
+TEST(Validation, IpAddressesInvalidVersion) {
+    EXPECT_THROW(gs::ip_addresses({.v = 5}), std::invalid_argument);
 }
