@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.7.2 - 2026-07-15
+
+This patch bumps our pinned `libhegel` ([hegel-rust](hegeldev/hegel-rust)) from [0.28.0](https://github.com/hegeldev/hegel-rust/releases/tag/v0.28.0) to [0.29.0](https://github.com/hegeldev/hegel-rust/releases/tag/v0.29.0).
+
 ## 0.7.1 - 2026-07-10
 
 This patch adds three `TestCase` methods and three generators.

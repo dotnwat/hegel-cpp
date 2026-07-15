@@ -21,7 +21,7 @@
  * FetchContent_Declare(
  *     hegel
  *     GIT_REPOSITORY https://github.com/hegeldev/hegel-cpp.git
- *     GIT_TAG v0.7.1
+ *     GIT_TAG v0.7.2
  * )
  * FetchContent_MakeAvailable(hegel)
  *
