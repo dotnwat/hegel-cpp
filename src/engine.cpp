@@ -143,7 +143,7 @@ namespace hegel::impl {
 
     hegel_run_t* run_start(hegel_context_t* ctx, hegel_settings_t* s) {
         hegel_run_t* run = nullptr;
-        check_rc(ctx, hegel_run_start(ctx, s, &run));
+        check_rc(ctx, hegel_run_start(ctx, s, nullptr, nullptr, &run));
         return run;
     }
 
@@ -151,7 +151,8 @@ namespace hegel::impl {
                                            hegel_settings_t* s,
                                            const char* blob) {
         hegel_test_case_t* tc = nullptr;
-        check_rc(ctx, hegel_test_case_from_blob(ctx, s, blob, &tc));
+        check_rc(ctx, hegel_test_case_from_blob(ctx, s, blob, nullptr, nullptr,
+                                                &tc));
         return tc;
     }
 
