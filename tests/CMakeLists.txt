@@ -91,6 +91,9 @@ hegel_add_test(NAME test_generators_combinators
     SOURCE test_generators_combinators.cpp)
 hegel_add_test(NAME test_generators_random
     SOURCE test_generators_random.cpp)
+hegel_add_test(NAME test_stateful
+    SOURCE test_stateful.cpp)
+
 
 # Guiding generation: reject(), target(), repeat().
 hegel_add_test(NAME test_guiding SOURCE test_guiding.cpp)

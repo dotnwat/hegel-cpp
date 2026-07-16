@@ -265,6 +265,7 @@
 #include "generators/numeric.h"
 #include "generators/primitives.h"
 #include "generators/random.h"
+#include "generators/stateful.h"
 #include "generators/strings.h"
 
 #include <functional>

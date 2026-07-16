@@ -67,6 +67,9 @@ namespace hegel::internal {
     void collection_reject(const TestCase& tc, int64_t collection_id,
                            const char* why);
 
+    int64_t new_pool(const TestCase& tc);
+    int64_t pool_add(const TestCase& tc, int64_t pool_id);
+    int64_t draw_variable(const TestCase& tc, int64_t pool_id, bool consume);
     /* Exception thrown when a test case is rejected and should be
      * discarded (e.g. by `TestCase::assume(false)`, an exhausted
      * `filter()`, or an `UnsatisfiedAssumption` from the engine).

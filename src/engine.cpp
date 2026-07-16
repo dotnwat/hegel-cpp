@@ -673,4 +673,30 @@ namespace hegel::internal {
             "hegel_collection_reject");
     }
 
+    int64_t new_pool(const TestCase& tc) {
+        impl::DrawScope scope(tc);
+        int64_t pool_id = 0;
+        scope.raise_for_rc(hegel_new_pool(scope.ctx, scope.tc, &pool_id),
+                           "hegel_new_pool");
+        return pool_id;
+    }
+
+    int64_t pool_add(const TestCase& tc, int64_t pool_id) {
+        impl::DrawScope scope(tc);
+        int64_t var_id = 0;
+        scope.raise_for_rc(
+            hegel_pool_add(scope.ctx, scope.tc, pool_id, &var_id),
+            "hegel_pool_add");
+        return var_id;
+    }
+
+    int64_t draw_variable(const TestCase& tc, int64_t pool_id, bool consume) {
+        impl::DrawScope scope(tc);
+        int64_t var_id = 0;
+        scope.raise_for_rc(
+            hegel_pool_generate(scope.ctx, scope.tc, pool_id, consume, &var_id),
+            "hegel_pool_generate");
+        return var_id;
+    }
+
 } // namespace hegel::internal
