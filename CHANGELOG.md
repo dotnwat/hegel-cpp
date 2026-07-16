@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.7.3 - 2026-07-16
+
+This patch adds pools for storing previously generated values. It also adds two
+generators, `values_reusable` and `values_consumed`, for drawing previously generated
+values with and without replacement, respectively.
+
+Pools will be more useful once stateful testing is added in a later release.
+
 ## 0.7.2 - 2026-07-15
 
 This patch bumps our pinned `libhegel` ([hegel-rust](hegeldev/hegel-rust)) from [0.28.0](https://github.com/hegeldev/hegel-rust/releases/tag/v0.28.0) to [0.29.0](https://github.com/hegeldev/hegel-rust/releases/tag/v0.29.0).
