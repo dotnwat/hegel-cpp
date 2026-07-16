@@ -10,13 +10,16 @@
 
 using namespace hegel::generators;
 
+/**
+ * @brief Scaffolding for stateful testing for a later release.
+ */
 namespace hegel::stateful {
 
     template <typename T> class VariablesGenerator;
 
     /**
      * @brief A pool of previously generated values. Values added to the pool
-     * can be drawn later via @ref values_consumed / @ref values_reusable.
+     * can be drawn later via @ref values_consumed() / @ref values_reusable().
      *
      * @code{.cpp}
         gs::Pool<int> pool = gs::Pool<int>(tc);
