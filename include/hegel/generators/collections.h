@@ -61,7 +61,7 @@ namespace hegel::generators {
             pool_.emplace(var_id, element);
         }
 
-        void add(const T&& element) {
+        void add(T&& element) {
             int64_t var_id = hegel::internal::pool_add(tc_, pool_id_);
             pool_.emplace(var_id, std::move(element));
         }
@@ -414,12 +414,13 @@ namespace hegel::generators {
                 hegel::internal::draw_variable(tc, p_.pool_id_, consume_);
 
             auto it = p_.pool_.find(variable);
+            // GCOVR_EXCL_START
             if (it == p_.pool_.end()) {
                 throw std::runtime_error(
                     "Pool state diverged between the engine and the "
                     "client, or a bug in the pool bookkeeping.");
             }
-
+            // GCOVR_EXCL_STOP
             if (consume_) {
                 auto val = std::move(it->second);
                 p_.pool_.erase(it);
