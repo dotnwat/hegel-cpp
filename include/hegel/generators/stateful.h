@@ -185,12 +185,33 @@ namespace hegel::stateful {
         return Generator<T>(new VariablesGenerator<T>(p, false));
     }
 
+    /**
+     * @brief A rule is one possible action in a stateful test.
+     *
+     * @tparam T The type of the state
+     */
     template <typename T> class Rule {
       public:
+        /**
+         * @brief Declares a new Rule
+         *
+         * @param name name of the rule
+         * @param step function representing the step a rule takes
+         */
         explicit Rule(std::string name, std::function<T(TestCase&, T)> step)
             : name_(std::move(name)), step_(std::move(step)) {}
 
+        /**
+         * @brief Returns the name of the rule.
+         *
+         * @return const std::string&
+         */
         const std::string& name() const { return name_; }
+        /**
+         * @brief Returns the underlying step function of the rule.
+         *
+         * @return const std::function<T(TestCase&, T)>&
+         */
         const std::function<T(TestCase&, T)>& step() const { return step_; }
 
       private:
@@ -198,13 +219,38 @@ namespace hegel::stateful {
         std::function<T(TestCase&, T)> step_;
     };
 
+    /**
+     * @brief An invariant is a predicate that must hold at any point in the
+     * stateful test. They are evaluated on the initial state and after every
+     * valid step. The invariant function should throw when the invariant is
+     * violated.
+     *
+     * @tparam T The type of the state
+     */
     template <typename T> class Invariant {
       public:
+        /**
+         * @brief Declare a new invariant.
+         *
+         * @param name
+         * @param invariant
+         */
         explicit Invariant(std::string name,
                            std::function<void(const T&)> invariant)
             : name_(std::move(name)), invariant_(std::move(invariant)) {}
 
+        /**
+         * @brief Returns the name of the invariant.
+         *
+         * @return const std::string&
+         */
         const std::string& name() const { return name_; }
+        /**
+         * @brief Returns the function representing the predicate of the
+         * invariant.
+         *
+         * @return const std::function<void(const T&)>&
+         */
         const std::function<void(const T&)>& invariant() const {
             return invariant_;
         }
@@ -214,6 +260,8 @@ namespace hegel::stateful {
         std::function<void(const T&)> invariant_;
     };
 
+    /// @cond INTERNAL
+    // check if invariants hold on a given state
     template <typename T>
     void check_invariants(TestCase& tc, const std::string& origin,
                           const T& state,
@@ -227,7 +275,21 @@ namespace hegel::stateful {
             }
         }
     }
+    /// @endcond
 
+    /**
+     * @brief Executes a stateful test by repeatedly applying randomly chosen @p
+     * rules to a an initial state @p init, checking each of the @p invariants
+     * before the first step and after every valid step. Raises @p
+     * std::invalid_argument if
+     * @p rules is empty.
+     *
+     * @tparam T The type of the state
+     * @param tc The test case object
+     * @param init The initial state
+     * @param rules The list of rules the test can apply
+     * @param invariants The list of invariants
+     */
     template <typename T>
     void run(TestCase& tc, T init, const std::vector<Rule<T>>& rules,
              const std::vector<Invariant<T>>& invariants) {
@@ -277,17 +339,28 @@ namespace hegel::stateful {
                 break;
             } else {
                 steps_run++;
-                internal::start_span(tc, internal::SpanLabel::StatefulRule);
-                int64_t next_rule_idx =
-                    internal::draw_rule(tc, state_machine_id);
-                int64_t step_num = steps_run + 1;
-                const Rule<T>& rule = rules[next_rule_idx];
-                tc.note("Step " + std::to_string(step_num) + ":" + rule.name());
+                try {
+                    internal::start_span(tc, internal::SpanLabel::StatefulRule);
+                    int64_t next_rule_idx =
+                        internal::draw_rule(tc, state_machine_id);
+                    int64_t step_num = steps_run + 1;
+                    const Rule<T>& rule = rules[next_rule_idx];
+                    tc.note("Step " + std::to_string(step_num) + ":" +
+                            rule.name());
 
-                state = rule.step()(tc, state);
-                check_invariants(tc, "after step " + std::to_string(step_num), state, invariants);
-                internal::stop_span(tc, internal::SpanLabel::StatefulRule);
-                num_steps_succeeded++;
+                    state = rule.step()(tc, state);
+                    check_invariants(tc,
+                                     "after step " + std::to_string(step_num),
+                                     state, invariants);
+                    internal::stop_span(tc);
+                    num_steps_succeeded++;
+                } catch (const internal::HegelReject&) {
+                    tc.note("Rule stopped early due to violated assumption");
+                    internal::stop_span(tc, true);
+                } catch (...) {
+                    internal::stop_span(tc);
+                    throw;
+                }
             }
         }
     }
