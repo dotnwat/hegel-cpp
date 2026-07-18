@@ -50,45 +50,124 @@ TEST(Pools, DrawFromEmptyPool) {
     });
 }
 
+namespace {
+    struct Stack : hegel::stateful::StateMachine<Stack> {
+        std::vector<int> state;
+        std::vector<hegel::stateful::Rule<Stack>> rules() {
+            return {
+                hegel::stateful::Rule<Stack>("push",
+                                             [](hegel::TestCase& tc, Stack& m) {
+                                                 m.state.push_back(tc.draw(
+                                                     gs::integers<int>()));
+                                             }),
+                hegel::stateful::Rule<Stack>("pop",
+                                             [](hegel::TestCase& tc, Stack& m) {
+                                                 tc.assume(!m.state.empty());
+                                                 m.state.pop_back();
+                                             }),
+            };
+        }
+    };
+
+    struct Empty : hegel::stateful::StateMachine<Empty> {
+        std::vector<hegel::stateful::Rule<Empty>> rules() { return {}; }
+    };
+
+    struct BoundedCounter : hegel::stateful::StateMachine<BoundedCounter> {
+        int s = 0;
+        std::vector<hegel::stateful::Rule<BoundedCounter>> rules() {
+            return {hegel::stateful::Rule<BoundedCounter>(
+                "inc", [](hegel::TestCase&, BoundedCounter& m) { m.s += 1; })};
+        }
+        std::vector<hegel::stateful::Invariant<BoundedCounter>> invariants() {
+            return {hegel::stateful::Invariant<BoundedCounter>(
+                "bounded", [](const BoundedCounter& m) {
+                    if (m.s >= 2) {
+                        throw std::runtime_error("bound violated");
+                    }
+                })};
+        }
+    };
+
+    struct StoppingCounter : hegel::stateful::StateMachine<StoppingCounter> {
+        int s = 0;
+        std::vector<hegel::stateful::Rule<StoppingCounter>> rules() {
+            return {hegel::stateful::Rule<StoppingCounter>(
+                "inc", [](hegel::TestCase&, StoppingCounter& m) {
+                    m.s += 1;
+                    if (m.s >= 100) {
+                        throw std::runtime_error("done");
+                    }
+                })};
+        }
+    };
+
+    struct Allocator : hegel::stateful::StateMachine<Allocator> {
+        std::set<int> live;
+        hegel::stateful::Pool<int> handles;
+        int next_handle = 0;
+
+        explicit Allocator(hegel::TestCase& tc) : handles(tc) {}
+
+        std::vector<hegel::stateful::Rule<Allocator>> rules() {
+            return {
+                hegel::stateful::Rule<Allocator>(
+                    "alloc",
+                    [](hegel::TestCase&, Allocator& m) {
+                        int h = m.next_handle++;
+                        m.handles.add(h);
+                        m.live.insert(h);
+                    }),
+                hegel::stateful::Rule<Allocator>(
+                    "free",
+                    [](hegel::TestCase& tc, Allocator& m) {
+                        int h = tc.draw(
+                            hegel::stateful::values_consumed(m.handles));
+                        m.live.erase(h);
+                    }),
+            };
+        }
+        std::vector<hegel::stateful::Invariant<Allocator>> invariants() {
+            return {hegel::stateful::Invariant<Allocator>(
+                "sizes_agree", [](const Allocator& m) {
+                    if (m.handles.size() != m.live.size()) {
+                        throw std::runtime_error("pool and live set diverged");
+                    }
+                })};
+        }
+    };
+
+    struct Adder : hegel::stateful::StateMachine<Adder> {
+        int s = 0;
+        std::vector<hegel::stateful::Rule<Adder>> rules() {
+            return {hegel::stateful::Rule<Adder>(
+                "step", [](hegel::TestCase& tc, Adder& m) {
+                    m.s += tc.draw(
+                        gs::integers<int>({.min_value = 1, .max_value = 9}));
+                })};
+        }
+    };
+} // namespace
+
 TEST(Stateful, BasicRun) {
     hegel::test([](hegel::TestCase& tc) {
-        auto push_rule = hegel::stateful::Rule<std::vector<int>>(
-            "push", [](hegel::TestCase& tc, std::vector<int>& state) {
-                int n = tc.draw(gs::integers<int>());
-                state.push_back(n);
-            });
-        auto pop_rule = hegel::stateful::Rule<std::vector<int>>(
-            "pop", [](hegel::TestCase& tc, std::vector<int>& state) {
-                tc.assume(!state.empty());
-                state.pop_back();
-            });
-        std::vector<int> state;
-        hegel::stateful::run(tc, state, {push_rule, pop_rule}, {});
+        Stack machine;
+        hegel::stateful::run(machine, tc);
     });
 }
 
 TEST(Stateful, EmptyRulesThrows) {
     EXPECT_THROW(hegel::test([](hegel::TestCase& tc) {
-                     int state = 0;
-                     hegel::stateful::run(
-                         tc, state, std::vector<hegel::stateful::Rule<int>>{},
-                         {});
+                     Empty machine;
+                     hegel::stateful::run(machine, tc);
                  }),
                  std::invalid_argument);
 }
 
 TEST(Stateful, InvariantViolationReported) {
     EXPECT_THROW(hegel::test([](hegel::TestCase& tc) {
-                     auto inc = hegel::stateful::Rule<int>(
-                         "inc", [](hegel::TestCase&, int& s) { s += 1; });
-                     auto bounded = hegel::stateful::Invariant<int>(
-                         "bounded", [](const int& s) {
-                             if (s >= 2) {
-                                 throw std::runtime_error("bound violated");
-                             }
-                         });
-                     int state = 0;
-                     hegel::stateful::run(tc, state, {inc}, {bounded});
+                     BoundedCounter machine;
+                     hegel::stateful::run(machine, tc);
                  }),
                  std::runtime_error);
 }
@@ -96,15 +175,8 @@ TEST(Stateful, InvariantViolationReported) {
 TEST(Stateful, SingleModeRunsUntilRuleStops) {
     EXPECT_THROW(hegel::test(
                      [](hegel::TestCase& tc) {
-                         auto inc = hegel::stateful::Rule<int>(
-                             "inc", [](hegel::TestCase&, int& s) {
-                                 s += 1;
-                                 if (s >= 100) {
-                                     throw std::runtime_error("done");
-                                 }
-                             });
-                         int state = 0;
-                         hegel::stateful::run(tc, state, {inc}, {});
+                         StoppingCounter machine;
+                         hegel::stateful::run(machine, tc);
                      },
                      hegel::Settings{.database = hegel::Database::disabled(),
                                      .mode = hegel::Mode::SingleTestCase}),
@@ -113,33 +185,8 @@ TEST(Stateful, SingleModeRunsUntilRuleStops) {
 
 TEST(Stateful, PoolAsState) {
     hegel::test([](hegel::TestCase& tc) {
-        struct State {
-            std::set<int> live;
-            hegel::stateful::Pool<int> handles;
-        };
-        State state{{}, hegel::stateful::Pool<int>(tc)};
-        int next_handle = 0;
-
-        auto alloc = hegel::stateful::Rule<State>(
-            "alloc", [&next_handle](hegel::TestCase&, State& s) {
-                int h = next_handle++;
-                s.handles.add(h);
-                s.live.insert(h);
-            });
-        auto free = hegel::stateful::Rule<State>(
-            "free", [](hegel::TestCase& tc, State& s) {
-                int h = tc.draw(hegel::stateful::values_consumed(s.handles));
-                s.live.erase(h);
-            });
-
-        auto sizes_agree = hegel::stateful::Invariant<State>(
-            "sizes_agree", [](const State& s) {
-                if (s.handles.size() != s.live.size()) {
-                    throw std::runtime_error("pool and live set diverged");
-                }
-            });
-
-        hegel::stateful::run(tc, state, {alloc, free}, {sizes_agree});
+        Allocator machine(tc);
+        hegel::stateful::run(machine, tc);
     });
 }
 
@@ -147,13 +194,8 @@ TEST(Stateful, TraceNestsDrawsAndHidesStopDecision) {
     testing::internal::CaptureStderr();
     hegel::test(
         [](hegel::TestCase& tc) {
-            auto step = hegel::stateful::Rule<int>(
-                "step", [](hegel::TestCase& tc, int& s) {
-                    s += tc.draw(
-                        gs::integers<int>({.min_value = 1, .max_value = 9}));
-                });
-            int state = 0;
-            hegel::stateful::run(tc, state, {step}, {});
+            Adder machine;
+            hegel::stateful::run(machine, tc);
         },
         hegel::Settings{.test_cases = 1,
                         .verbosity = hegel::Verbosity::Verbose,

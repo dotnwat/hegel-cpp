@@ -8,6 +8,7 @@
 #include <optional>
 #include <stdexcept>
 #include <string>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -19,32 +20,42 @@ using namespace hegel::generators;
  * @brief Stateful (model-based) property testing.
  *
  * A stateful test exercises a system through a sequence of randomly chosen
- * actions ("rules") applied to a state. Rules are constructed with @ref Rule
- * from a name and a step function that performs one application of the rule,
- * drawing any arguments it needs from the test case and mutating the state.
- * Invariants are predicates on the state evaluated before any step is run and
- * after every successful step. They throw when violated.
+ * actions ("rules") applied to a state machine. Derive a machine from
+ * @ref StateMachine and define its @c rules(). Each @ref Rule is a name and a
+ * step function that performs one application of the rule, drawing any
+ * arguments it needs from the test case and mutating the machine. Invariants
+ * are predicates on the machine evaluated before any step is run and after
+ * every successful step. An invariant must throw when violated.
  *
- * To run a state machine, call @ref run inside a @ref hegel::test. Examples in
- * this documentation assume the alias `namespace gs = hegel::generators;`.
+ * To run a state machine, pass an instance to @ref run inside a
+ * @ref hegel::test. Examples in this documentation assume the alias
+ * `namespace gs = hegel::generators;`.
  *
  * Example: an integer stack.
  *
  * @code{.cpp}
-    hegel::test([](hegel::TestCase& tc) {
-        auto push = hegel::stateful::Rule<std::vector<int>>(
-            "push", [](hegel::TestCase& tc, std::vector<int>& stack) {
-                stack.push_back(tc.draw(
-                    gs::integers<int>({.min_value = 0, .max_value = 100})));
-            });
-        auto pop = hegel::stateful::Rule<std::vector<int>>(
-            "pop", [](hegel::TestCase& tc, std::vector<int>& stack) {
-                tc.assume(!stack.empty());
-                stack.pop_back();
-            });
-
+    struct IntegerStack : hegel::stateful::StateMachine<IntegerStack> {
         std::vector<int> stack;
-        hegel::stateful::run(tc, stack, {push, pop}, {});
+
+        std::vector<hegel::stateful::Rule<IntegerStack>> rules() {
+            return {
+                hegel::stateful::Rule<IntegerStack>(
+                    "push", [](hegel::TestCase& tc, IntegerStack& m) {
+                        m.stack.push_back(tc.draw(gs::integers<int>(
+                            {.min_value = 0, .max_value = 100})));
+                    }),
+                hegel::stateful::Rule<IntegerStack>(
+                    "pop", [](hegel::TestCase& tc, IntegerStack& m) {
+                        tc.assume(!m.stack.empty());
+                        m.stack.pop_back();
+                    }),
+            };
+        }
+    };
+
+    hegel::test([](hegel::TestCase& tc) {
+        IntegerStack machine;
+        hegel::stateful::run(machine, tc);
     });
  * @endcode
  */
@@ -70,23 +81,36 @@ namespace hegel::stateful {
      * back out and releases it.
      *
      * @code{.cpp}
-        struct State {
+        struct Allocator : hegel::stateful::StateMachine<Allocator> {
             std::set<int> live;
             hegel::stateful::Pool<int> handles;
+            int next_handle = 0;
+
+            explicit Allocator(hegel::TestCase& tc) : handles(tc) {}
+
+            std::vector<hegel::stateful::Rule<Allocator>> rules() {
+                return {
+                    hegel::stateful::Rule<Allocator>(
+                        "alloc", [](hegel::TestCase&, Allocator& m) {
+                            int h = m.next_handle++;
+                            m.handles.add(h);
+                            m.live.insert(h);
+                        }),
+                    hegel::stateful::Rule<Allocator>(
+                        "free", [](hegel::TestCase& tc, Allocator& m) {
+                            // draws a handle a prior alloc put in the pool
+                            int h = tc.draw(
+                                hegel::stateful::values_consumed(m.handles));
+                            m.live.erase(h);
+                        }),
+                };
+            }
         };
 
-        auto alloc = hegel::stateful::Rule<State>(
-            "alloc", [&next_handle](hegel::TestCase&, State& s) {
-                int h = next_handle++;
-                s.handles.add(h);
-                s.live.insert(h);
-            });
-        auto free = hegel::stateful::Rule<State>(
-            "free", [](hegel::TestCase& tc, State& s) {
-                // draws a handle a prior alloc put in the pool
-                int h = tc.draw(hegel::stateful::values_consumed(s.handles));
-                s.live.erase(h);
-            });
+        hegel::test([](hegel::TestCase& tc) {
+            Allocator machine(tc);
+            hegel::stateful::run(machine, tc);
+        });
      * @endcode
      *
      * @tparam T The type of variables in the pool.
@@ -256,7 +280,7 @@ namespace hegel::stateful {
             });
      * @endcode
      *
-     * @tparam T The type of the state
+     * @tparam T The state-machine type the rule acts on
      */
     template <typename T> class Rule {
       public:
@@ -296,7 +320,7 @@ namespace hegel::stateful {
      * valid step. The invariant function should throw when the invariant is
      * violated.
      *
-     * @tparam T The type of the state
+     * @tparam T The state-machine type the invariant checks
      */
     template <typename T> class Invariant {
       public:
@@ -331,6 +355,37 @@ namespace hegel::stateful {
         std::function<void(const T&)> invariant_;
     };
 
+    /**
+     * @brief Base class for a state machine. Consists of the state, the rules,
+     * and the invariants that act on it.
+     *
+     * Derive from it with the deriving type as @p Derived and define
+     *
+     * @code{.cpp}
+        std::vector<Rule<Derived>> rules();
+     * @endcode
+     *
+     * returning the actions the test may apply. Optionally override
+     * @ref invariants to add predicates checked before the first step and after
+     * every valid step. The deriving object holds the state. Its rules mutate
+     * it in place. Pass an instance to @ref run.
+     *
+     * @tparam Derived The deriving state-machine type
+     */
+    template <typename Derived> class StateMachine {
+      public:
+        /**
+         * @brief Invariants checked before the first step and after every valid
+         * step. Override to add them. Defaults to none.
+         *
+         * @return const std::vector<Invariant<Derived>>&
+         */
+        std::vector<Invariant<Derived>> invariants() { return {}; }
+
+      protected:
+        ~StateMachine() = default;
+    };
+
     /// @cond INTERNAL
     // check if invariants hold on a given state
     template <typename T>
@@ -349,10 +404,10 @@ namespace hegel::stateful {
     /// @endcond
 
     /**
-     * @brief Executes a stateful test by repeatedly applying randomly chosen @p
-     * rules to @p state, checking each of the @p invariants before the first
-     * step and after every valid step. Rules mutate @p state in place. Raises
-     * @p std::invalid_argument if @p rules is empty.
+     * @brief Executes a stateful test by repeatedly applying randomly chosen
+     * rules from @p machine to it and checking @p machine's invariants before
+     * the first step and after every valid step. Rules mutate @p machine in
+     * place. Raises @p std::invalid_argument if the machine declares no rules.
      *
      * On a failing replay, each applied rule prints as @c "Step N: <name>". A
      * violated invariant prints @c "Invariant <name> violated after step M" or
@@ -364,16 +419,17 @@ namespace hegel::stateful {
         Invariant nonneg violated after step 2
      * @endcode
      *
-     * @tparam T The type of the state
+     * @tparam M The state-machine type, deriving from @ref StateMachine
+     * @param machine The state machine, initialized by the caller and mutated
+     * by its rules
      * @param tc The test case object
-     * @param state The state, initialized by the caller and mutated by the
-     * rules
-     * @param rules The list of rules the test can apply
-     * @param invariants The list of invariants
      */
-    template <typename T>
-    void run(TestCase& tc, T& state, const std::vector<Rule<T>>& rules,
-             const std::vector<Invariant<T>>& invariants) {
+    template <typename M> void run(M& machine, TestCase& tc) {
+        static_assert(
+            std::is_base_of<StateMachine<M>, M>::value,
+            "run() requires a machine deriving from StateMachine<M>.");
+        std::vector<Rule<M>> rules = machine.rules();
+        std::vector<Invariant<M>> invariants = machine.invariants();
         if (rules.empty()) {
             throw std::invalid_argument(
                 "Cannot run a state machine with no rules.");
@@ -384,15 +440,15 @@ namespace hegel::stateful {
 
         std::vector<std::string> rule_names;
         rule_names.reserve(rules.size());
-        for (const Rule<T>& rule : rules)
+        for (const Rule<M>& rule : rules)
             rule_names.push_back(rule.name());
 
         std::vector<std::string> invariant_names;
         invariant_names.reserve(invariants.size());
-        for (const Invariant<T>& invariant : invariants)
+        for (const Invariant<M>& invariant : invariants)
             invariant_names.push_back(invariant.name());
 
-        check_invariants(tc, "in the initial state", state, invariants);
+        check_invariants(tc, "in the initial state", machine, invariants);
 
         auto must_stop = [=](int64_t steps_run) -> std::optional<bool> {
             if (is_single) {
@@ -427,18 +483,27 @@ namespace hegel::stateful {
                 try {
                     int64_t next_rule_idx =
                         internal::draw_rule(tc, state_machine_id);
-                    const Rule<T>& rule = rules[next_rule_idx];
+                    // GCOVR_EXCL_START
+                    if (next_rule_idx < 0 ||
+                        static_cast<size_t>(next_rule_idx) >= rules.size()) {
+                        throw std::runtime_error(
+                            "state_machine_next_rule returned out-of-range "
+                            "rule index. Please report this as a bug.");
+                    }
+                    // GCOVR_EXCL_STOP
+                    const Rule<M>& rule =
+                        rules[static_cast<size_t>(next_rule_idx)];
                     tc.note("Step " + std::to_string(steps_run) + ": " +
                             rule.name());
 
                     // nest the draws the step makes under its "Step N" header.
                     {
                         internal::NoteIndentScope indent(tc);
-                        rule.step()(tc, state);
+                        rule.step()(tc, machine);
                     }
                     check_invariants(tc,
                                      "after step " + std::to_string(steps_run),
-                                     state, invariants);
+                                     machine, invariants);
                     internal::stop_span(tc);
                     num_steps_succeeded++;
                 } catch (const internal::HegelReject&) {
