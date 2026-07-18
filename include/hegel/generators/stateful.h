@@ -14,8 +14,6 @@
 
 #include "hegel/core.h"
 
-using namespace hegel::generators;
-
 /**
  * @brief Stateful (model-based) property testing.
  *
@@ -60,6 +58,9 @@ using namespace hegel::generators;
  * @endcode
  */
 namespace hegel::stateful {
+
+    using hegel::generators::Generator;
+    using hegel::generators::IGenerator;
 
     template <typename T> class VariablesGenerator;
 
