@@ -10,7 +10,6 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
-#include <iostream>
 #include <limits>
 #include <optional>
 #include <stdexcept>
@@ -225,17 +224,13 @@ namespace hegel::impl {
         // verbosity flags for one draw call; every primitive below funnels
         // through here.
         struct DrawScope {
+            const TestCase& tc_obj;
             hegel_context_t* ctx;
             hegel_test_case_t* tc;
-            bool log;
-            std::string indent;
 
-            explicit DrawScope(const TestCase& tc_obj) {
-                auto* data = tc_obj.data();
+            explicit DrawScope(const TestCase& obj) : tc_obj(obj) {
                 ctx = thread_context();
-                tc = data->tc;
-                log = data->should_log();
-                indent = data->indent_prefix();
+                tc = obj.data()->tc;
             }
 
             // Route a libhegel return code to success or the matching
@@ -263,13 +258,9 @@ namespace hegel::impl {
                 // GCOVR_EXCL_STOP
             }
 
-            // Surface the drawn value per the verbosity policy: on the
-            // final replay of a failure at Normal, on every case at
-            // Verbose and above.
+            // Print the drawn value in the trace.
             void log_generated(const std::string& value) const {
-                if (log) {
-                    std::cerr << indent << "Generated: " << value << "\n";
-                }
+                tc_obj.note("Generated: " + value);
             }
         };
 
