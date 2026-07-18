@@ -142,3 +142,30 @@ TEST(Stateful, PoolAsState) {
         hegel::stateful::run(tc, state, {alloc, free}, {sizes_agree});
     });
 }
+
+TEST(Stateful, TraceNestsDrawsAndHidesStopDecision) {
+    testing::internal::CaptureStderr();
+    hegel::test(
+        [](hegel::TestCase& tc) {
+            auto step = hegel::stateful::Rule<int>(
+                "step", [](hegel::TestCase& tc, int& s) {
+                    s += tc.draw(
+                        gs::integers<int>({.min_value = 1, .max_value = 9}));
+                });
+            int state = 0;
+            hegel::stateful::run(tc, state, {step}, {});
+        },
+        hegel::Settings{.test_cases = 1,
+                        .verbosity = hegel::Verbosity::Verbose,
+                        .database = hegel::Database::disabled(),
+                        .stateful_step_count = 3});
+    std::string out = testing::internal::GetCapturedStderr();
+
+    // a step's draw is nested two spaces under its header.
+    EXPECT_NE(out.find("  Generated:"), std::string::npos) << out;
+    // no drawn value is logged at column 0.
+    EXPECT_EQ(out.find("\nGenerated:"), std::string::npos) << out;
+    // the stop-decision boolean is not printed.
+    EXPECT_EQ(out.find("Generated: true"), std::string::npos) << out;
+    EXPECT_EQ(out.find("Generated: false"), std::string::npos) << out;
+}

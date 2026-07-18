@@ -1,6 +1,7 @@
 #include <engine.h>
 
 #include <hegel/internal.h>
+#include <hegel/settings.h>
 #include <hegel/test_case.h>
 
 #include <hegel.h>
@@ -227,12 +228,14 @@ namespace hegel::impl {
             hegel_context_t* ctx;
             hegel_test_case_t* tc;
             bool log;
+            std::string indent;
 
             explicit DrawScope(const TestCase& tc_obj) {
                 auto* data = tc_obj.data();
                 ctx = thread_context();
                 tc = data->tc;
                 log = data->should_log();
+                indent = data->indent_prefix();
             }
 
             // Route a libhegel return code to success or the matching
@@ -265,7 +268,7 @@ namespace hegel::impl {
             // Verbose and above.
             void log_generated(const std::string& value) const {
                 if (log) {
-                    std::cerr << "Generated: " << value << "\n";
+                    std::cerr << indent << "Generated: " << value << "\n";
                 }
             }
         };
@@ -620,8 +623,8 @@ namespace hegel::internal {
         return value;
     }
 
-    bool draw_boolean(const TestCase& tc, double p,
-                      std::optional<bool> forced) {
+    bool draw_boolean(const TestCase& tc, double p, std::optional<bool> forced,
+                      bool silent) {
         impl::DrawScope scope(tc);
         bool value = false;
         scope.raise_for_rc(
@@ -629,7 +632,9 @@ namespace hegel::internal {
                                    /*forced=*/forced.value_or(false),
                                    /*has_forced=*/forced.has_value(), &value),
             "hegel_generate_boolean");
-        scope.log_generated(value ? "true" : "false");
+        if (!silent) {
+            scope.log_generated(value ? "true" : "false");
+        }
         return value;
     }
 

@@ -56,7 +56,8 @@ namespace hegel::internal {
     uint64_t draw_integer_unsigned(const TestCase& tc, uint64_t min_value,
                                    uint64_t max_value);
     bool draw_boolean(const TestCase& tc, double p,
-                      std::optional<bool> forced = std::nullopt);
+                      std::optional<bool> forced = std::nullopt,
+                      bool silent = false);
     double draw_float(const TestCase& tc, uint32_t width, double min_value,
                       double max_value, bool allow_nan, bool allow_infinity,
                       bool exclude_min, bool exclude_max,
@@ -83,6 +84,17 @@ namespace hegel::internal {
                               const std::vector<std::string>& invariant_names);
     bool is_single_test_case(const TestCase& tc);
     int64_t stateful_step_count(const TestCase& tc);
+
+    class NoteIndentScope {
+      public:
+        explicit NoteIndentScope(const TestCase& tc);
+        ~NoteIndentScope();
+        NoteIndentScope(const NoteIndentScope&) = delete;
+        NoteIndentScope& operator=(const NoteIndentScope&) = delete;
+
+      private:
+        const TestCase& tc_;
+    };
     /* Exception thrown when a test case is rejected and should be
      * discarded (e.g. by `TestCase::assume(false)`, an exhausted
      * `filter()`, or an `UnsatisfiedAssumption` from the engine).

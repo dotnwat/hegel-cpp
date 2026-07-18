@@ -415,7 +415,8 @@ namespace hegel::stateful {
 
         while (true) {
             internal::start_span(tc, internal::SpanLabel::StatefulRule);
-            if (internal::draw_boolean(tc, p_stop, must_stop(steps_run))) {
+            if (internal::draw_boolean(tc, p_stop, must_stop(steps_run),
+                                       /*silent=*/true)) {
                 if (num_steps_succeeded == 0) {
                     tc.reject();
                 }
@@ -429,14 +430,18 @@ namespace hegel::stateful {
                     tc.note("Step " + std::to_string(steps_run) + ": " +
                             rule.name());
 
-                    rule.step()(tc, state);
+                    // nest the draws the step makes under its "Step N" header.
+                    {
+                        internal::NoteIndentScope indent(tc);
+                        rule.step()(tc, state);
+                    }
                     check_invariants(tc,
                                      "after step " + std::to_string(steps_run),
                                      state, invariants);
                     internal::stop_span(tc);
                     num_steps_succeeded++;
                 } catch (const internal::HegelReject&) {
-                    tc.note("Rule stopped early due to violated assumption");
+                    tc.note("Rule stopped early due to violated assumption.");
                     internal::stop_span(tc, true);
                 } catch (...) {
                     internal::stop_span(tc);
