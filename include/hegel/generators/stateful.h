@@ -59,6 +59,11 @@ namespace hegel::stateful {
          */
         void add(const T& element) {
             int64_t var_id = hegel::internal::pool_add(tc_, pool_id_);
+            // GCOVR_EXCL_START
+            if (pool_.find(var_id) != pool_.end()) {
+                throw std::runtime_error("unexpected variable id in map");
+            }
+            // GCOVR_EXCL_STOP
             pool_.emplace(var_id, element);
         }
 
@@ -69,6 +74,11 @@ namespace hegel::stateful {
          */
         void add(T&& element) {
             int64_t var_id = hegel::internal::pool_add(tc_, pool_id_);
+            // GCOVR_EXCL_START
+            if (pool_.find(var_id) != pool_.end()) {
+                throw std::runtime_error("unexpected variable id in map");
+            }
+            // GCOVR_EXCL_STOP
             pool_.emplace(var_id, std::move(element));
         }
 
@@ -196,9 +206,12 @@ namespace hegel::stateful {
          * @brief Declares a new Rule
          *
          * @param name name of the rule
-         * @param step function representing the step a rule takes
+         * @param step function representing the step a rule takes. It mutates
+         * the state in place, drawing any arguments it needs from the test
+         * case. Always check preconditions with @c assume() before mutating. A
+         * rule that rejects after mutating leaves the state partially modified.
          */
-        explicit Rule(std::string name, std::function<T(TestCase&, T)> step)
+        explicit Rule(std::string name, std::function<void(TestCase&, T&)> step)
             : name_(std::move(name)), step_(std::move(step)) {}
 
         /**
@@ -210,13 +223,13 @@ namespace hegel::stateful {
         /**
          * @brief Returns the underlying step function of the rule.
          *
-         * @return const std::function<T(TestCase&, T)>&
+         * @return const std::function<void(TestCase&, T&)>&
          */
-        const std::function<T(TestCase&, T)>& step() const { return step_; }
+        const std::function<void(TestCase&, T&)>& step() const { return step_; }
 
       private:
         std::string name_;
-        std::function<T(TestCase&, T)> step_;
+        std::function<void(TestCase&, T&)> step_;
     };
 
     /**
@@ -279,19 +292,19 @@ namespace hegel::stateful {
 
     /**
      * @brief Executes a stateful test by repeatedly applying randomly chosen @p
-     * rules to a an initial state @p init, checking each of the @p invariants
-     * before the first step and after every valid step. Raises @p
-     * std::invalid_argument if
-     * @p rules is empty.
+     * rules to @p state, checking each of the @p invariants before the first
+     * step and after every valid step. Rules mutate @p state in place. Raises
+     * @p std::invalid_argument if @p rules is empty.
      *
      * @tparam T The type of the state
      * @param tc The test case object
-     * @param init The initial state
+     * @param state The state, initialized by the caller and mutated by the
+     * rules
      * @param rules The list of rules the test can apply
      * @param invariants The list of invariants
      */
     template <typename T>
-    void run(TestCase& tc, T init, const std::vector<Rule<T>>& rules,
+    void run(TestCase& tc, T& state, const std::vector<Rule<T>>& rules,
              const std::vector<Invariant<T>>& invariants) {
         if (rules.empty()) {
             throw std::invalid_argument(
@@ -311,7 +324,7 @@ namespace hegel::stateful {
         for (const Invariant<T>& invariant : invariants)
             invariant_names.push_back(invariant.name());
 
-        check_invariants(tc, "in the initial state", init, invariants);
+        check_invariants(tc, "in the initial state", state, invariants);
 
         auto must_stop = [=](int64_t steps_run) -> std::optional<bool> {
             if (is_single) {
@@ -329,9 +342,9 @@ namespace hegel::stateful {
         int64_t steps_run = 0;
         int64_t num_steps_succeeded = 0;
         double p_stop = std::pow(2.0, -16);
-        T state = init;
 
         while (true) {
+            internal::start_span(tc, internal::SpanLabel::StatefulRule);
             if (internal::draw_boolean(tc, p_stop, must_stop(steps_run))) {
                 if (num_steps_succeeded == 0) {
                     tc.reject();
@@ -340,17 +353,15 @@ namespace hegel::stateful {
             } else {
                 steps_run++;
                 try {
-                    internal::start_span(tc, internal::SpanLabel::StatefulRule);
                     int64_t next_rule_idx =
                         internal::draw_rule(tc, state_machine_id);
-                    int64_t step_num = steps_run + 1;
                     const Rule<T>& rule = rules[next_rule_idx];
-                    tc.note("Step " + std::to_string(step_num) + ":" +
+                    tc.note("Step " + std::to_string(steps_run) + ": " +
                             rule.name());
 
-                    state = rule.step()(tc, state);
+                    rule.step()(tc, state);
                     check_invariants(tc,
-                                     "after step " + std::to_string(step_num),
+                                     "after step " + std::to_string(steps_run),
                                      state, invariants);
                     internal::stop_span(tc);
                     num_steps_succeeded++;
