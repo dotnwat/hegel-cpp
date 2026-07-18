@@ -17,6 +17,8 @@ namespace hegel::impl::test_case {
         hegel_test_case_t* tc;
         bool is_final;
         Verbosity verbosity;
+        int64_t stateful_step_count;
+        Mode mode;
 
         // Whether per-case diagnostics (notes, drawn values) should print:
         // never under Quiet, only on the final replay under Normal, and on

@@ -1,10 +1,16 @@
 #pragma once
 
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <functional>
+#include <limits>
 #include <map>
+#include <optional>
 #include <stdexcept>
+#include <string>
 #include <utility>
+#include <vector>
 
 #include "hegel/core.h"
 
@@ -179,6 +185,112 @@ namespace hegel::stateful {
         return Generator<T>(new VariablesGenerator<T>(p, false));
     }
 
+    template <typename T> class Rule {
+      public:
+        explicit Rule(std::string name, std::function<T(TestCase&, T)> step)
+            : name_(std::move(name)), step_(std::move(step)) {}
+
+        const std::string& name() const { return name_; }
+        const std::function<T(TestCase&, T)>& step() const { return step_; }
+
+      private:
+        std::string name_;
+        std::function<T(TestCase&, T)> step_;
+    };
+
+    template <typename T> class Invariant {
+      public:
+        explicit Invariant(std::string name,
+                           std::function<void(const T&)> invariant)
+            : name_(std::move(name)), invariant_(std::move(invariant)) {}
+
+        const std::string& name() const { return name_; }
+        const std::function<void(const T&)>& invariant() const {
+            return invariant_;
+        }
+
+      private:
+        std::string name_;
+        std::function<void(const T&)> invariant_;
+    };
+
+    template <typename T>
+    void check_invariants(TestCase& tc, const std::string& origin,
+                          const T& state,
+                          const std::vector<Invariant<T>>& invariants) {
+        for (const auto& inv : invariants) {
+            try {
+                (inv.invariant())(state);
+            } catch (...) {
+                tc.note("Invariant " + inv.name() + " violated " + origin);
+                throw;
+            }
+        }
+    }
+
+    template <typename T>
+    void run(TestCase& tc, T init, const std::vector<Rule<T>>& rules,
+             const std::vector<Invariant<T>>& invariants) {
+        if (rules.empty()) {
+            throw std::invalid_argument(
+                "Cannot run a state machine with no rules.");
+        }
+        bool is_single = internal::is_single_test_case(tc);
+        int64_t max_steps = is_single ? std::numeric_limits<int64_t>::max()
+                                      : internal::stateful_step_count(tc);
+
+        std::vector<std::string> rule_names;
+        rule_names.reserve(rules.size());
+        for (const Rule<T>& rule : rules)
+            rule_names.push_back(rule.name());
+
+        std::vector<std::string> invariant_names;
+        invariant_names.reserve(invariants.size());
+        for (const Invariant<T>& invariant : invariants)
+            invariant_names.push_back(invariant.name());
+
+        check_invariants(tc, "in the initial state", init, invariants);
+
+        auto must_stop = [=](int64_t steps_run) -> std::optional<bool> {
+            if (is_single) {
+                return false;
+            } else if (steps_run >= max_steps) {
+                return true;
+            } else if (steps_run <= 0) {
+                return false;
+            } else {
+                return std::nullopt;
+            }
+        };
+        int64_t state_machine_id =
+            internal::new_state_machine(tc, rule_names, invariant_names);
+        int64_t steps_run = 0;
+        int64_t num_steps_succeeded = 0;
+        double p_stop = std::pow(2.0, -16);
+        T state = init;
+
+        while (true) {
+            if (internal::draw_boolean(tc, p_stop, must_stop(steps_run))) {
+                if (num_steps_succeeded == 0) {
+                    tc.reject();
+                }
+                break;
+            } else {
+                steps_run++;
+                internal::start_span(tc, internal::SpanLabel::StatefulRule);
+                int64_t next_rule_idx =
+                    internal::draw_rule(tc, state_machine_id);
+                int64_t step_num = steps_run + 1;
+                const Rule<T>& rule = rules[next_rule_idx];
+                tc.note("Step " + std::to_string(step_num) + ":" + rule.name());
+
+                state = rule.step()(tc, state);
+                check_invariants(tc, "after step " + std::to_string(step_num), state, invariants);
+                internal::stop_span(tc, internal::SpanLabel::StatefulRule);
+                num_steps_succeeded++;
+            }
+        }
+    }
     /// @}
 
 } // namespace hegel::stateful

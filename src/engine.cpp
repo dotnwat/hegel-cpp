@@ -620,13 +620,15 @@ namespace hegel::internal {
         return value;
     }
 
-    bool draw_boolean(const TestCase& tc, double p) {
+    bool draw_boolean(const TestCase& tc, double p,
+                      std::optional<bool> forced) {
         impl::DrawScope scope(tc);
         bool value = false;
-        scope.raise_for_rc(hegel_generate_boolean(scope.ctx, scope.tc, p,
-                                                  /*forced=*/false,
-                                                  /*has_forced=*/false, &value),
-                           "hegel_generate_boolean");
+        scope.raise_for_rc(
+            hegel_generate_boolean(scope.ctx, scope.tc, p,
+                                   /*forced=*/forced.value_or(false),
+                                   /*has_forced=*/forced.has_value(), &value),
+            "hegel_generate_boolean");
         scope.log_generated(value ? "true" : "false");
         return value;
     }
@@ -697,6 +699,53 @@ namespace hegel::internal {
             hegel_pool_generate(scope.ctx, scope.tc, pool_id, consume, &var_id),
             "hegel_pool_generate");
         return var_id;
+    }
+
+    bool is_single_test_case(const TestCase& tc) {
+        return tc.data()->mode == Mode::SingleTestCase;
+    }
+
+    int64_t stateful_step_count(const TestCase& tc) {
+        return tc.data()->stateful_step_count;
+    }
+
+    int64_t draw_rule(const TestCase& tc, int64_t state_machine_id) {
+        impl::DrawScope scope(tc);
+        int64_t rule_idx;
+
+        scope.raise_for_rc(hegel_state_machine_next_rule(scope.ctx, scope.tc,
+                                                         state_machine_id,
+                                                         &rule_idx),
+                           "hegel_state_machine_next_rule");
+        return rule_idx;
+    }
+
+    int64_t new_state_machine(const TestCase& tc,
+                              const std::vector<std::string>& rule_names,
+                              const std::vector<std::string>& invariant_names) {
+        impl::DrawScope scope(tc);
+        int64_t machine_id;
+
+        auto to_cstrings = [](const std::vector<std::string>& names) {
+            std::vector<char*> cstrings;
+            cstrings.reserve(names.size());
+            for (const std::string& name : names)
+                cstrings.push_back(const_cast<char*>(name.c_str()));
+            return cstrings;
+        };
+
+        std::vector<char*> rule_name_cstrings = to_cstrings(rule_names);
+        std::vector<char*> invariant_name_cstrings =
+            to_cstrings(invariant_names);
+
+        scope.raise_for_rc(hegel_new_state_machine(
+                               scope.ctx, scope.tc, rule_name_cstrings.data(),
+                               rule_names.size(),
+                               invariant_name_cstrings.data(),
+                               invariant_names.size(), &machine_id),
+                           "hegel_new_state_machine");
+
+        return machine_id;
     }
 
 } // namespace hegel::internal

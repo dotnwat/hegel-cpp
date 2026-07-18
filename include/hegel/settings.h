@@ -242,5 +242,8 @@ namespace hegel {
         /// Randomness backend. Defaults to Backend::Auto; picking an explicit
         /// backend overrides the automatic detection.
         Backend backend = Backend::Auto;
+
+        // The maximum number of steps to successfully generate.
+        int64_t stateful_step_count = 50;
     };
 } // namespace hegel
