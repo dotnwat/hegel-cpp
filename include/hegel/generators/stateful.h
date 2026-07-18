@@ -216,7 +216,7 @@ namespace hegel::stateful {
      *
      * @code{.cpp}
         hegel::test([](hegel::TestCase& tc) {
-            gs::Pool<int> pool = gs::Pool<int>(tc);
+            hegel::stateful::Pool<int> pool(tc);
             std::set<int> original_set =
                 tc.draw(gs::sets(gs::integers<int>(), {.max_size = 10}));
 
@@ -226,7 +226,8 @@ namespace hegel::stateful {
 
             std::set<int> returned_set;
             for (int i = 0; i < original_set.size(); i++) {
-                returned_set.insert(tc.draw(gs::values_consumed(pool)));
+                returned_set.insert(
+                    tc.draw(hegel::stateful::values_consumed(pool)));
             }
 
             assert(original_set == returned_set);
@@ -246,7 +247,7 @@ namespace hegel::stateful {
      *
      * @code{.cpp}
         hegel::test([](hegel::TestCase& tc) {
-            gs::Pool<int> pool = gs::Pool<int>(tc);
+            hegel::stateful::Pool<int> pool(tc);
             uint8_t sz = tc.draw(gs::integers<uint8_t>());
             std::set<int> original_set =
                 tc.draw(gs::sets(gs::integers<int>(), {.max_size = sz}));
@@ -256,7 +257,7 @@ namespace hegel::stateful {
             }
 
             for (int i = 0; i < original_set.size(); i++) {
-                tc.draw(gs::values_reusable(pool));
+                tc.draw(hegel::stateful::values_reusable(pool));
             }
 
             assert(pool.size() == original_set.size());
