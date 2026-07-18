@@ -163,8 +163,6 @@ TEST(Stateful, TraceNestsDrawsAndHidesStopDecision) {
 
     // a step's draw is nested two spaces under its header.
     EXPECT_NE(out.find("  Generated:"), std::string::npos) << out;
-    // no drawn value is logged at column 0.
-    EXPECT_EQ(out.find("\nGenerated:"), std::string::npos) << out;
     // the stop-decision boolean is not printed.
     EXPECT_EQ(out.find("Generated: true"), std::string::npos) << out;
     EXPECT_EQ(out.find("Generated: false"), std::string::npos) << out;

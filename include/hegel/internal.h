@@ -41,7 +41,7 @@ namespace hegel::internal {
         Mapped = 13,
         SampledFrom = 14,
         EnumVariant = 15,
-        StatefulRule = 17
+        StatefulRule = 1000
     };
 
     // Open / close a labeled span around a group of draws so the shrinker

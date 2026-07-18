@@ -542,6 +542,12 @@ namespace hegel::internal {
                       HEGEL_LABEL_FILTER);
         static_assert(static_cast<uint64_t>(SpanLabel::Mapped) ==
                       HEGEL_LABEL_MAPPED);
+        static_assert(static_cast<uint64_t>(SpanLabel::SampledFrom) ==
+                      HEGEL_LABEL_SAMPLED_FROM);
+        static_assert(static_cast<uint64_t>(SpanLabel::EnumVariant) ==
+                      HEGEL_LABEL_ENUM_VARIANT);
+        static_assert(static_cast<uint64_t>(SpanLabel::StatefulRule) >
+                      HEGEL_LABEL_STRING);
 
         // Two's-complement little-endian encoding of a uint64_t for the
         // engine's big-integer draw: 9 bytes so the top bit is never read

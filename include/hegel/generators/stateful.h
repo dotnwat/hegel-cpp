@@ -1,6 +1,5 @@
 #pragma once
 
-#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
@@ -411,12 +410,14 @@ namespace hegel::stateful {
             internal::new_state_machine(tc, rule_names, invariant_names);
         int64_t steps_run = 0;
         int64_t num_steps_succeeded = 0;
-        double p_stop = std::pow(2.0, -16);
+        constexpr double p_stop = 1.0 / 65536.0; // 2^-16
 
         while (true) {
             internal::start_span(tc, internal::SpanLabel::StatefulRule);
+            // gives engine more control of when to stop generating steps
             if (internal::draw_boolean(tc, p_stop, must_stop(steps_run),
                                        /*silent=*/true)) {
+                internal::stop_span(tc);
                 if (num_steps_succeeded == 0) {
                     tc.reject();
                 }
