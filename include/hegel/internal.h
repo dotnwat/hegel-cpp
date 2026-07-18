@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <exception>
 #include <optional>
+#include <string>
 #include <vector>
 
 namespace hegel {

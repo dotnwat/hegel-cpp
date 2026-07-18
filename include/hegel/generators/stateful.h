@@ -17,25 +17,77 @@
 using namespace hegel::generators;
 
 /**
- * @brief Scaffolding for stateful testing for a later release.
+ * @brief Stateful (model-based) property testing.
+ *
+ * A stateful test exercises a system through a sequence of randomly chosen
+ * actions ("rules") applied to a state. Rules are constructed with @ref Rule
+ * from a name and a step function that performs one application of the rule,
+ * drawing any arguments it needs from the test case and mutating the state.
+ * Invariants are predicates on the state evaluated before any step is run and
+ * after every successful step. They throw when violated.
+ *
+ * To run a state machine, call @ref run inside a @ref hegel::test. Examples in
+ * this documentation assume the alias `namespace gs = hegel::generators;`.
+ *
+ * Example: an integer stack.
+ *
+ * @code{.cpp}
+    hegel::test([](hegel::TestCase& tc) {
+        auto push = hegel::stateful::Rule<std::vector<int>>(
+            "push", [](hegel::TestCase& tc, std::vector<int>& stack) {
+                stack.push_back(tc.draw(
+                    gs::integers<int>({.min_value = 0, .max_value = 100})));
+            });
+        auto pop = hegel::stateful::Rule<std::vector<int>>(
+            "pop", [](hegel::TestCase& tc, std::vector<int>& stack) {
+                tc.assume(!stack.empty());
+                stack.pop_back();
+            });
+
+        std::vector<int> stack;
+        hegel::stateful::run(tc, stack, {push, pop}, {});
+    });
+ * @endcode
  */
 namespace hegel::stateful {
 
     template <typename T> class VariablesGenerator;
 
     /**
-     * @brief A pool of previously generated values. Values added to the pool
-     * can be drawn later via @ref values_consumed() / @ref values_reusable().
+     * @brief A pool of previously generated values.  A pool lets data flow from
+     * one rule to another, so a rule can act on a handle or identifier that an
+     * earlier rule produced rather than on a freshly drawn value.
+     *
+     * Create one with its constructor and populate it with @ref add. To draw
+     * from the pool, use the generators @ref values_reusable (returns a value
+     * without removing it) and @ref values_consumed (removes and returns a
+     * value).
+     *
+     * A @ref Pool is neither copyable nor movable. A state that embeds a pool
+     * is passed to @ref run by reference and never copied.
+     *
+     * Example: a resource allocator. The @c alloc rule creates a fresh resource
+     * and deposits it in the pool. The @c free rule draws one of those resource
+     * back out and releases it.
      *
      * @code{.cpp}
-        gs::Pool<int> pool = gs::Pool<int>(tc);
-        uint8_t sz = tc.draw(gs::integers<uint8_t>());
-        std::set<int> original_set =
-            tc.draw(gs::sets(gs::integers<int>(), {.max_size = sz}));
+        struct State {
+            std::set<int> live;
+            hegel::stateful::Pool<int> handles;
+        };
 
-        for (int num : original_set) {
-            pool.add(num);
-        }
+        auto alloc = hegel::stateful::Rule<State>(
+            "alloc", [&next_handle](hegel::TestCase&, State& s) {
+                int h = next_handle++;
+                s.handles.add(h);
+                s.live.insert(h);
+            });
+        auto free = hegel::stateful::Rule<State>(
+            "free", [](hegel::TestCase& tc, State& s) {
+                // draws a handle a prior alloc put in the pool
+                int h = tc.draw(hegel::stateful::values_consumed(s.handles));
+                s.live.erase(h);
+            });
      * @endcode
      *
      * @tparam T The type of variables in the pool.
@@ -198,6 +250,13 @@ namespace hegel::stateful {
     /**
      * @brief A rule is one possible action in a stateful test.
      *
+     * @code{.cpp}
+        auto push = hegel::stateful::Rule<std::vector<int>>(
+            "push", [](hegel::TestCase& tc, std::vector<int>& stack) {
+                stack.push_back(tc.draw(gs::integers<int>()));
+            });
+     * @endcode
+     *
      * @tparam T The type of the state
      */
     template <typename T> class Rule {
@@ -296,6 +355,16 @@ namespace hegel::stateful {
      * step and after every valid step. Rules mutate @p state in place. Raises
      * @p std::invalid_argument if @p rules is empty.
      *
+     * On a failing replay, each applied rule prints as @c "Step N: <name>". A
+     * violated invariant prints @c "Invariant <name> violated after step M" or
+     * @c "Invariant <name> violated in the initial state".
+     *
+     * @code{.txt}
+        Step 1: add
+        Step 2: add
+        Invariant nonneg violated after step 2
+     * @endcode
+     *
      * @tparam T The type of the state
      * @param tc The test case object
      * @param state The state, initialized by the caller and mutated by the
@@ -329,13 +398,14 @@ namespace hegel::stateful {
         auto must_stop = [=](int64_t steps_run) -> std::optional<bool> {
             if (is_single) {
                 return false;
-            } else if (steps_run >= max_steps) {
-                return true;
-            } else if (steps_run <= 0) {
-                return false;
-            } else {
-                return std::nullopt;
             }
+            if (steps_run >= max_steps) {
+                return true;
+            }
+            if (steps_run <= 0) {
+                return false;
+            }
+            return std::nullopt;
         };
         int64_t state_machine_id =
             internal::new_state_machine(tc, rule_names, invariant_names);
