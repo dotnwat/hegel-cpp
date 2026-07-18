@@ -2,6 +2,9 @@
 
 #include <cstdint>
 #include <exception>
+#include <optional>
+#include <string>
+#include <vector>
 
 namespace hegel {
     class TestCase;
@@ -36,6 +39,9 @@ namespace hegel::internal {
         FlatMap = 11,
         Filter = 12,
         Mapped = 13,
+        SampledFrom = 14,
+        EnumVariant = 15,
+        StatefulRule = 1000
     };
 
     // Open / close a labeled span around a group of draws so the shrinker
@@ -49,7 +55,9 @@ namespace hegel::internal {
     // Uses the engine's big-integer draw when the range exceeds int64_t.
     uint64_t draw_integer_unsigned(const TestCase& tc, uint64_t min_value,
                                    uint64_t max_value);
-    bool draw_boolean(const TestCase& tc, double p);
+    bool draw_boolean(const TestCase& tc, double p,
+                      std::optional<bool> forced = std::nullopt,
+                      bool silent = false);
     double draw_float(const TestCase& tc, uint32_t width, double min_value,
                       double max_value, bool allow_nan, bool allow_infinity,
                       bool exclude_min, bool exclude_max,
@@ -70,6 +78,23 @@ namespace hegel::internal {
     int64_t new_pool(const TestCase& tc);
     int64_t pool_add(const TestCase& tc, int64_t pool_id);
     int64_t draw_variable(const TestCase& tc, int64_t pool_id, bool consume);
+    int64_t draw_rule(const TestCase& tc, int64_t state_machine_id);
+    int64_t new_state_machine(const TestCase& tc,
+                              const std::vector<std::string>& rule_names,
+                              const std::vector<std::string>& invariant_names);
+    bool is_single_test_case(const TestCase& tc);
+    int64_t stateful_step_count(const TestCase& tc);
+
+    class NoteIndentScope {
+      public:
+        explicit NoteIndentScope(const TestCase& tc);
+        ~NoteIndentScope();
+        NoteIndentScope(const NoteIndentScope&) = delete;
+        NoteIndentScope& operator=(const NoteIndentScope&) = delete;
+
+      private:
+        const TestCase& tc_;
+    };
     /* Exception thrown when a test case is rejected and should be
      * discarded (e.g. by `TestCase::assume(false)`, an exhausted
      * `filter()`, or an `UnsatisfiedAssumption` from the engine).

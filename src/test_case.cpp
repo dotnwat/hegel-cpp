@@ -44,8 +44,18 @@ namespace hegel {
 
     void TestCase::note(std::string_view message) const {
         if (data_->should_log()) {
-            std::cerr << message << std::endl;
+            std::cerr << data_->indent_prefix() << message << std::endl;
         }
     }
+
+    namespace internal {
+
+        NoteIndentScope::NoteIndentScope(const TestCase& tc) : tc_(tc) {
+            tc_.data()->note_indent++;
+        }
+
+        NoteIndentScope::~NoteIndentScope() { tc_.data()->note_indent--; }
+
+    } // namespace internal
 
 } // namespace hegel

@@ -143,6 +143,7 @@ namespace hegel {
 
         BodyOutcome replay_failure(hegel_context_t* ctx, hegel_settings_t* s,
                                    const char* blob, Verbosity verbosity,
+                                   int64_t stateful_step_count, Mode mode,
                                    const std::function<void(TestCase&)>& fn) {
             TestCaseGuard tc_guard{ctx};
             tc_guard.tc = impl::test_case_from_blob(ctx, s, blob);
@@ -156,7 +157,8 @@ namespace hegel {
             // Positional init (fields: tc, is_final, verbosity) so this
             // TU stays clean under a C++17 (HEGEL_REFLECTION=OFF) build.
             impl::test_case::TestCaseData data{tc_guard.tc,
-                                               /*is_final=*/true, verbosity};
+                                               /*is_final=*/true, verbosity,
+                                               stateful_step_count, mode};
             TestCase tc_obj(&data);
             BodyOutcome outcome = run_body(fn, tc_obj);
             mark_complete(ctx, tc_guard.tc, outcome);
@@ -293,8 +295,9 @@ namespace hegel {
             if (settings.verbosity != Verbosity::Quiet && settings.print_blob) {
                 std::fprintf(stderr, "Failure blob: %s\n", blob);
             }
-            BodyOutcome outcome =
-                replay_failure(ctx, s, blob, settings.verbosity, test_fn);
+            BodyOutcome outcome = replay_failure(
+                ctx, s, blob, settings.verbosity, settings.stateful_step_count,
+                settings.mode, test_fn);
             if (outcome.status != HEGEL_STATUS_INTERESTING) {
                 // GCOVR_EXCL_START
                 throw std::runtime_error(flaky_diagnostic);
@@ -309,9 +312,9 @@ namespace hegel {
                            const std::vector<std::string>& failure_blobs) {
             // multiple blobs are accepted for bookkeeping, but only the first
             // one is run like in the other Hegel libraries
-            BodyOutcome outcome =
-                replay_failure(ctx, s, failure_blobs.front().c_str(),
-                               settings.verbosity, test_fn);
+            BodyOutcome outcome = replay_failure(
+                ctx, s, failure_blobs.front().c_str(), settings.verbosity,
+                settings.stateful_step_count, settings.mode, test_fn);
 
             if (outcome.exception == nullptr) {
                 throw std::runtime_error(
@@ -340,9 +343,10 @@ namespace hegel {
                 if (tc_guard.tc == nullptr) {
                     break;
                 }
-                impl::test_case::TestCaseData data{tc_guard.tc,
-                                                   /*is_final=*/false,
-                                                   settings.verbosity};
+                impl::test_case::TestCaseData data{
+                    tc_guard.tc,
+                    /*is_final=*/false, settings.verbosity,
+                    settings.stateful_step_count, settings.mode};
                 TestCase tc_obj(&data);
                 BodyOutcome outcome = run_body(test_fn, tc_obj);
                 mark_complete(ctx, tc_guard.tc, outcome);

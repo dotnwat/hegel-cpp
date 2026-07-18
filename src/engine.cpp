@@ -1,6 +1,7 @@
 #include <engine.h>
 
 #include <hegel/internal.h>
+#include <hegel/settings.h>
 #include <hegel/test_case.h>
 
 #include <hegel.h>
@@ -9,7 +10,6 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
-#include <iostream>
 #include <limits>
 #include <optional>
 #include <stdexcept>
@@ -224,15 +224,13 @@ namespace hegel::impl {
         // verbosity flags for one draw call; every primitive below funnels
         // through here.
         struct DrawScope {
+            const TestCase& tc_obj;
             hegel_context_t* ctx;
             hegel_test_case_t* tc;
-            bool log;
 
-            explicit DrawScope(const TestCase& tc_obj) {
-                auto* data = tc_obj.data();
+            explicit DrawScope(const TestCase& obj) : tc_obj(obj) {
                 ctx = thread_context();
-                tc = data->tc;
-                log = data->should_log();
+                tc = obj.data()->tc;
             }
 
             // Route a libhegel return code to success or the matching
@@ -260,13 +258,9 @@ namespace hegel::impl {
                 // GCOVR_EXCL_STOP
             }
 
-            // Surface the drawn value per the verbosity policy: on the
-            // final replay of a failure at Normal, on every case at
-            // Verbose and above.
+            // Print the drawn value in the trace.
             void log_generated(const std::string& value) const {
-                if (log) {
-                    std::cerr << "Generated: " << value << "\n";
-                }
+                tc_obj.note("Generated: " + value);
             }
         };
 
@@ -548,6 +542,12 @@ namespace hegel::internal {
                       HEGEL_LABEL_FILTER);
         static_assert(static_cast<uint64_t>(SpanLabel::Mapped) ==
                       HEGEL_LABEL_MAPPED);
+        static_assert(static_cast<uint64_t>(SpanLabel::SampledFrom) ==
+                      HEGEL_LABEL_SAMPLED_FROM);
+        static_assert(static_cast<uint64_t>(SpanLabel::EnumVariant) ==
+                      HEGEL_LABEL_ENUM_VARIANT);
+        static_assert(static_cast<uint64_t>(SpanLabel::StatefulRule) >
+                      HEGEL_LABEL_STRING);
 
         // Two's-complement little-endian encoding of a uint64_t for the
         // engine's big-integer draw: 9 bytes so the top bit is never read
@@ -620,14 +620,18 @@ namespace hegel::internal {
         return value;
     }
 
-    bool draw_boolean(const TestCase& tc, double p) {
+    bool draw_boolean(const TestCase& tc, double p, std::optional<bool> forced,
+                      bool silent) {
         impl::DrawScope scope(tc);
         bool value = false;
-        scope.raise_for_rc(hegel_generate_boolean(scope.ctx, scope.tc, p,
-                                                  /*forced=*/false,
-                                                  /*has_forced=*/false, &value),
-                           "hegel_generate_boolean");
-        scope.log_generated(value ? "true" : "false");
+        scope.raise_for_rc(
+            hegel_generate_boolean(scope.ctx, scope.tc, p,
+                                   /*forced=*/forced.value_or(false),
+                                   /*has_forced=*/forced.has_value(), &value),
+            "hegel_generate_boolean");
+        if (!silent) {
+            scope.log_generated(value ? "true" : "false");
+        }
         return value;
     }
 
@@ -697,6 +701,53 @@ namespace hegel::internal {
             hegel_pool_generate(scope.ctx, scope.tc, pool_id, consume, &var_id),
             "hegel_pool_generate");
         return var_id;
+    }
+
+    bool is_single_test_case(const TestCase& tc) {
+        return tc.data()->mode == Mode::SingleTestCase;
+    }
+
+    int64_t stateful_step_count(const TestCase& tc) {
+        return tc.data()->stateful_step_count;
+    }
+
+    int64_t draw_rule(const TestCase& tc, int64_t state_machine_id) {
+        impl::DrawScope scope(tc);
+        int64_t rule_idx;
+
+        scope.raise_for_rc(hegel_state_machine_next_rule(scope.ctx, scope.tc,
+                                                         state_machine_id,
+                                                         &rule_idx),
+                           "hegel_state_machine_next_rule");
+        return rule_idx;
+    }
+
+    int64_t new_state_machine(const TestCase& tc,
+                              const std::vector<std::string>& rule_names,
+                              const std::vector<std::string>& invariant_names) {
+        impl::DrawScope scope(tc);
+        int64_t machine_id;
+
+        auto to_cstrings = [](const std::vector<std::string>& names) {
+            std::vector<char*> cstrings;
+            cstrings.reserve(names.size());
+            for (const std::string& name : names)
+                cstrings.push_back(const_cast<char*>(name.c_str()));
+            return cstrings;
+        };
+
+        std::vector<char*> rule_name_cstrings = to_cstrings(rule_names);
+        std::vector<char*> invariant_name_cstrings =
+            to_cstrings(invariant_names);
+
+        scope.raise_for_rc(hegel_new_state_machine(
+                               scope.ctx, scope.tc, rule_name_cstrings.data(),
+                               rule_names.size(),
+                               invariant_name_cstrings.data(),
+                               invariant_names.size(), &machine_id),
+                           "hegel_new_state_machine");
+
+        return machine_id;
     }
 
 } // namespace hegel::internal
