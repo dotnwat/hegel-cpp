@@ -87,6 +87,47 @@ namespace hegel {
 
         NoteIndentScope::~NoteIndentScope() { tc_.data()->note_indent--; }
 
+        DrawLogScope::DrawLogScope(const TestCase& tc, std::string_view name,
+                                   bool repeatable)
+            : tc_(tc) {
+            auto* data = tc_.data();
+            outermost_ = data->draw_depth == 0;
+            if (outermost_) {
+                std::string base(name.empty() ? "draw" : name);
+                bool base_repeatable = name.empty() || repeatable;
+
+                int count = ++data->draw_name_counts[base];
+                if (!base_repeatable) {
+                    // A bare name prints bare on every use; the surrounding
+                    // output (e.g. a stateful step header) disambiguates.
+                    display_ = base;
+                    data->taken_display_names.insert(display_);
+                } else {
+                    int candidate = count;
+                    while (true) {
+                        std::string attempt =
+                            base + "_" + std::to_string(candidate);
+                        if (data->taken_display_names.insert(attempt).second) {
+                            display_ = attempt;
+                            break;
+                        }
+                        candidate++;
+                    }
+                }
+            }
+            data->draw_depth++;
+        }
+
+        DrawLogScope::~DrawLogScope() { tc_.data()->draw_depth--; }
+
+        bool DrawLogScope::should_log() const {
+            return outermost_ && tc_.data()->should_log();
+        }
+
+        void DrawLogScope::log(const std::string& rendered) const {
+            tc_.note("auto " + display_ + " = " + rendered + ";");
+        }
+
     } // namespace internal
 
 } // namespace hegel

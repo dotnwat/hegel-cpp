@@ -330,6 +330,8 @@ namespace hegel::internal {
                               static_cast<double>(value));
             }
             std::string out = buf;
+            // keep integral-valued float rendering as float since %g drops
+            // decimal when it isn't needed.
             if (out.find('.') == std::string::npos &&
                 out.find('e') == std::string::npos &&
                 out.find('E') == std::string::npos) {

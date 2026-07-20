@@ -53,11 +53,26 @@ namespace hegel {
         /**
          * @brief Draw a random value from a generator.
          *
+         * Each draw is printed as a C++ declaration, `auto <name> =
+         * <value>;`, on the final replay of a failing test case and on
+         * every case at Verbosity::Verbose and above.
+         *
          * @tparam T The value type produced by @p gen
          * @param gen The generator to draw from
+         * @param name Optional variable name for the printed declaration.
+         *             Draws with no name print as `draw_1`, `draw_2`, ...
+         *             in draw order. See also @ref HEGEL_DRAW, which
+         *             captures the name automatically.
+         * @param repeatable Pass true when the same @p name is drawn more
+         *             than once per test case (e.g. in a loop). Repeatable
+         *             draws print with a 1-based suffix (`x_1`, `x_2`,
+         *             ...). A non-repeatable name prints without the suffix and
+         *             throws std::logic_error if it is reused.
          * @return A freshly generated value of type T
          */
-        template <typename T> T draw(const generators::Generator<T>& gen) const;
+        template <typename T>
+        T draw(const generators::Generator<T>& gen, std::string_view name = {},
+               bool repeatable = false) const;
 
         /**
          * @brief Reject the current test case if @p condition is false.

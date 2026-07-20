@@ -283,11 +283,11 @@ TEST(DrawNames, ComposeInnerDrawsAreSilent) {
     Approvals::verify(out);
 }
 
-// Name counters are per test case.
 TEST(DrawNames, CountersResetPerCase) {
     std::string out = run_verbose(
         [](hegel::TestCase& tc) {
-            (void)tc.draw(gs::just(3), "x", /*repeatable=*/true);
+            (void)tc.draw(gs::integers<int>().map([](int) { return 3; }), "x",
+                          /*repeatable=*/true);
         },
         /*test_cases=*/3);
     Approvals::verify(out);

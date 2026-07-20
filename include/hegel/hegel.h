@@ -404,6 +404,31 @@ namespace hegel {
     static void hegel_test_body_##name
 
 /**
+ * @brief Draw a value into a named local variable.
+ *
+ * Expands to `auto var = tc.draw(gen, "var")`, so failure output prints the
+ * draw under the variable's own name:
+ *
+ * @code{.cpp}
+ * hegel::test([](hegel::TestCase& tc) {
+ *     HEGEL_DRAW(x, tc, gs::integers<int>());
+ *     HEGEL_DRAW(y, tc, gs::integers<int>());
+ *     if (x + y != y + x) throw std::runtime_error("not commutative");
+ * });
+ * // replay output: auto x = 10;
+ * //                auto y = 3;
+ * @endcode
+ *
+ * The name is non-repeatable. To draw under the same name more than once
+ * per test case (e.g. in a loop), call `tc.draw(gen, "name", true)`.
+ *
+ * @param var Name of the local variable to declare.
+ * @param tc The current hegel::TestCase.
+ * @param ... The generator expression to draw from.
+ */
+#define HEGEL_DRAW(var, tc, ...) auto var = (tc).draw((__VA_ARGS__), #var)
+
+/**
  * @brief Replay a failing example for a @ref HEGEL_TEST from its blob.
  *
  * Place this above the matching HEGEL_TEST, keyed by the same name. The test

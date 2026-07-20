@@ -8,6 +8,7 @@
 
 #include "config.h"
 #include "internal.h"
+#include "repr.h"
 #include "test_case.h"
 
 /**
@@ -260,8 +261,14 @@ namespace hegel::generators {
 namespace hegel {
 
     template <typename T>
-    T TestCase::draw(const generators::Generator<T>& gen) const {
-        return gen.do_draw(*this);
+    T TestCase::draw(const generators::Generator<T>& gen,
+                     std::string_view name, bool repeatable) const {
+        internal::DrawLogScope scope(*this, name, repeatable);
+        T value = gen.do_draw(*this);
+        if (scope.should_log()) {
+            scope.log(internal::repr(value));
+        }
+        return value;
     }
 
 } // namespace hegel

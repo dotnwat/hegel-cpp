@@ -4,6 +4,7 @@
 #include <exception>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace hegel {
@@ -94,6 +95,24 @@ namespace hegel::internal {
 
       private:
         const TestCase& tc_;
+    };
+
+    class DrawLogScope {
+      public:
+        DrawLogScope(const TestCase& tc, std::string_view name,
+                     bool repeatable);
+        ~DrawLogScope();
+        DrawLogScope(const DrawLogScope&) = delete;
+        DrawLogScope& operator=(const DrawLogScope&) = delete;
+
+        bool should_log() const;
+
+        void log(const std::string& rendered) const;
+
+      private:
+        const TestCase& tc_;
+        bool outermost_;
+        std::string display_;
     };
     /* Exception thrown when a test case is rejected and should be
      * discarded (e.g. by `TestCase::assume(false)`, an exhausted
