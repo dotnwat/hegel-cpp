@@ -413,7 +413,7 @@ namespace hegel {
 /**
  * @brief Draw a value into a named local variable.
  *
- * Expands to `auto var = tc.draw(gen, "var")`, so failure output prints the
+ * Expands to `auto var = tc.draw("var", gen)`, so failure output prints the
  * draw under the variable's own name:
  *
  * @code{.cpp}
@@ -430,13 +430,13 @@ namespace hegel {
  * variable, since it includes the variable name in the counterexample printing.
  *
  * The name prints bare on every use. To number repeated draws instead
- * (`var_1`, `var_2`, ...), call `tc.draw(gen, "name", true)`.
+ * (`var_1`, `var_2`, ...), call `tc.draw("name", gen, true)`.
  *
  * @param tc The current hegel::TestCase.
  * @param var Name of the local variable to declare.
  * @param ... The generator expression to draw from.
  */
-#define HEGEL_DRAW(tc, var, ...) auto var = (tc).draw((__VA_ARGS__), #var)
+#define HEGEL_DRAW(tc, var, ...) auto var = (tc).draw(#var, (__VA_ARGS__))
 
 /**
  * @brief Replay a failing example for a @ref HEGEL_TEST from its blob.

@@ -25,7 +25,7 @@ int main() {
             auto sq =
                 tc.draw(gs::integers<int>({.min_value = 0, .max_value = 5})
                             .map([](int x) { return x * x; }));
-            auto named = tc.draw(gs::integers<int>(), "named");
+            auto named = tc.draw("named", gs::integers<int>());
             HEGEL_DRAW(tc, macro_drawn, gs::booleans());
             (void)named;
             (void)macro_drawn;

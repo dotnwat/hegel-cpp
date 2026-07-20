@@ -85,6 +85,6 @@ libc++abi: terminating due to uncaught exception of type std::runtime_error: sor
 Each draw is replayed and printed as a C++ declaration. The `HEGEL_DRAW` draw macros binds the value and records the
 variable's name for that output. Plain `tc.draw(gen)` works anywhere a
 macro doesn't fit and prints numbered placeholders (`auto draw_1 = ...;`);
-`tc.draw(gen, "vec1")` names one explicitly.
+`tc.draw("vec1", gen)` names one explicitly.
 
 Hegel reports the minimal example showing that our sort is incorrectly dropping duplicates.

@@ -261,7 +261,12 @@ namespace hegel::generators {
 namespace hegel {
 
     template <typename T>
-    T TestCase::draw(const generators::Generator<T>& gen, std::string_view name,
+    T TestCase::draw(const generators::Generator<T>& gen) const {
+        return draw(std::string_view(), gen);
+    }
+
+    template <typename T>
+    T TestCase::draw(std::string_view name, const generators::Generator<T>& gen,
                      bool repeatable) const {
         internal::DrawLogScope scope(*this, name, repeatable);
         T value = gen.do_draw(*this);
