@@ -78,9 +78,13 @@ failures found in one run are replayed first in the next. (You can also call
 This test will fail! Hegel will produce a minimal failing test case for us:
 
 ```
-Generated: [0,0]
-libc++abi: terminating due to uncaught exception of type std::runtime_error:
-Hegel test failed: sort mismatch
+auto draw_1 = std::vector<int>{0, 0};
+libc++abi: terminating due to uncaught exception of type std::runtime_error: sort mismatch
 ```
+
+Each draw is replayed as a C++ declaration. To print a draw under its own
+variable name (`auto vec1 = ...;`), bind it with
+`HEGEL_DRAW(vec1, tc, gs::vectors(gs::integers<int>()))`, or pass the name
+explicitly: `tc.draw(gen, "vec1")`.
 
 Hegel reports the minimal example showing that our sort is incorrectly dropping duplicates.

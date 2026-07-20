@@ -287,6 +287,19 @@ TEST(DrawNames, SuffixAllocationSkipsTakenNames) {
     Approvals::verify(out);
 }
 
+// Using one name with different repeatable flags is a programming error.
+TEST(DrawNames, InconsistentRepeatableFlagThrows) {
+    EXPECT_THROW(hegel::test(
+                     [](hegel::TestCase& tc) {
+                         (void)tc.draw(gs::just(1), "x", /*repeatable=*/true);
+                         (void)tc.draw(gs::just(2), "x");
+                     },
+                     hegel::Settings{.test_cases = 1,
+                                     .verbosity = hegel::Verbosity::Quiet,
+                                     .database = hegel::Database::disabled()}),
+                 std::logic_error);
+}
+
 // Reusing a non-repeatable name is a programming error.
 TEST(DrawNames, NonRepeatableReuseThrows) {
     EXPECT_THROW(hegel::test(

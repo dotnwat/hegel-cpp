@@ -45,7 +45,7 @@ namespace hegel::internal {
         auto start = p.find("T = ");
         auto end = p.rfind(']');
         if (start == std::string_view::npos || end == std::string_view::npos) {
-            return "?";
+            return "?"; // GCOVR_EXCL_LINE - guards a compiler format change
         }
         start += 4;
         return p.substr(start, end - start);

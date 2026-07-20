@@ -131,6 +131,8 @@ TEST(Repr, CharLiterals) {
     EXPECT_EQ(repr('\''), "'\\''");
     EXPECT_EQ(repr('\\'), "'\\\\'");
     EXPECT_EQ(repr('\a'), "'\\007'");
+    // A double quote needs no escape inside a char literal.
+    EXPECT_EQ(repr('"'), "'\"'");
 }
 
 TEST(Repr, Enums) {
@@ -154,6 +156,12 @@ TEST(Repr, IntegralValuedFloatsKeepFloatingType) {
     EXPECT_EQ(repr(2.0), "2.0");
     EXPECT_EQ(repr(2.0f), "2.0f");
     EXPECT_EQ(repr(-3.0), "-3.0");
+}
+
+TEST(Repr, LongDoubles) {
+    EXPECT_EQ(repr(2.5L), "2.5L");
+    EXPECT_EQ(repr(4.0L), "4.0L");
+    EXPECT_EQ(cpp_type_name<long double>(), "long double");
 }
 
 TEST(Repr, SubnormalsRoundTrip) {
@@ -186,6 +194,7 @@ TEST(Repr, PlainString) {
 TEST(Repr, StringEscapes) {
     EXPECT_EQ(repr(std::string("a\"b\\c")), "std::string(\"a\\\"b\\\\c\")");
     EXPECT_EQ(repr(std::string("x\ny\tz\r")), "std::string(\"x\\ny\\tz\\r\")");
+    EXPECT_EQ(repr(std::string("it's")), "std::string(\"it's\")");
 }
 
 TEST(Repr, StringNonAsciiBytesUseOctal) {
