@@ -203,15 +203,12 @@ TEST(Stateful, TraceNestsDrawsAndHidesStopDecision) {
         },
         hegel::Settings{.test_cases = 1,
                         .verbosity = hegel::Verbosity::Verbose,
+                        .seed = 1,
+                        .derandomize = false,
                         .database = hegel::Database::disabled(),
                         .stateful_step_count = 3});
     std::string out = testing::internal::GetCapturedStderr();
-
-    // a step's draw is nested two spaces under its header.
-    EXPECT_NE(out.find("  auto draw_"), std::string::npos) << out;
-    // the stop-decision boolean is not printed.
-    EXPECT_EQ(out.find("= true;"), std::string::npos) << out;
-    EXPECT_EQ(out.find("= false;"), std::string::npos) << out;
+    Approvals::verify(out);
 }
 
 TEST(Stateful, CounterexamplePrintsRuleDraws) {

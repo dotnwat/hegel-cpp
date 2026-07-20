@@ -1,0 +1,3 @@
+auto draw_1 = 10;
+--- rethrown: failure with x=10
+

@@ -6,6 +6,7 @@
 
 #include <cstdint>
 #include <functional>
+#include <regex>
 #include <string>
 
 #include <hegel/hegel.h>
@@ -27,10 +28,6 @@ using hegel::tests::common::SubprocessResult;
 
 namespace gs = hegel::generators;
 
-// ---------------------------------------------------------------------------
-// Failure output, driven through the prebuilt subject binary
-// ---------------------------------------------------------------------------
-
 namespace {
     // Run the prebuilt subject binary for one scenario (see subject_main.cpp).
     // No per-test recompile, so these tests run fast and in parallel.
@@ -39,63 +36,118 @@ namespace {
     }
 } // namespace
 
-TEST(Output, PrintBlob) {
-    SubprocessResult r = run_scenario("print_blob");
-    EXPECT_NE(r.exit_code, 0);
-    assert_matches_regex(r.stderr_data, R"(Failure blob:)");
+TEST(Output, FailingScenariosExitNonZero) {
+    for (const char* scenario :
+         {"failing", "stable_origin", "throw_int", "throw_custom",
+          "multiple_failures", "multiple_failures_off", "exception_message",
+          "print_blob"}) {
+        SubprocessResult r = run_scenario(scenario);
+        EXPECT_NE(r.exit_code, 0) << scenario;
+    }
 }
 
-TEST(Output, FailingTest) {
-    SubprocessResult r = run_scenario("failing");
-    EXPECT_NE(r.exit_code, 0);
-    assert_matches_regex(r.stderr_data, R"(auto draw_1 = 0;)");
-    assert_matches_regex(r.stderr_data, R"(intentional failure: 0\b)");
-}
-
-TEST(Output, OriginStableAcrossDrawnValues) {
-    SubprocessResult r = run_scenario("stable_origin");
-    EXPECT_NE(r.exit_code, 0);
-    assert_matches_regex(r.stderr_data, R"(auto draw_1 = 10;)");
-    assert_matches_regex(r.stderr_data, R"(failure with x=10\b)");
-}
-
-// Non-std exceptions carry no message, so only the replay's draw output is
-// portable to assert on; the exception itself terminates the subject.
-TEST(Output, NonStdExceptionIsHandled) {
-    SubprocessResult r = run_scenario("throw_int");
-    EXPECT_NE(r.exit_code, 0);
-    assert_matches_regex(r.stderr_data, R"(auto draw_1 = 5;)");
-}
-
-TEST(Output, CustomNonStdExceptionIsHandled) {
-    SubprocessResult r = run_scenario("throw_custom");
-    EXPECT_NE(r.exit_code, 0);
-    assert_matches_regex(r.stderr_data, R"(auto draw_1 = 5;)");
-}
-
-TEST(Output, MultipleFailuresReported) {
-    SubprocessResult r = run_scenario("multiple_failures");
-    EXPECT_NE(r.exit_code, 0);
-    assert_matches_regex(r.stderr_data,
-                         R"(Hegel test failed with 2 distinct failures)");
-    assert_matches_regex(r.stderr_data, R"(Failure 1:)");
-    assert_matches_regex(r.stderr_data, R"(Failure 2:)");
-    assert_matches_regex(r.stderr_data, R"(even bug with x=10\b)");
-    assert_matches_regex(r.stderr_data, R"(odd bug with x=11\b)");
-}
-
-TEST(Output, MultipleFailuresOffReportsOne) {
-    SubprocessResult r = run_scenario("multiple_failures_off");
-    EXPECT_NE(r.exit_code, 0);
-    assert_matches_regex(r.stderr_data, R"(\w+ bug with x=1[01]\b)");
-    EXPECT_EQ(r.stderr_data.find("distinct failures"), std::string::npos)
-        << r.stderr_data;
-}
-
-TEST(Output, ExceptionMessageIsShown) {
+TEST(Output, ExceptionMessageIsPrinted) {
     SubprocessResult r = run_scenario("exception_message");
     EXPECT_NE(r.exit_code, 0);
     assert_matches_regex(r.stderr_data, R"(custom exception for x=7)");
+}
+
+namespace {
+    // Runs a failing property with a fixed seed so the shrunk replay, and
+    // with it the whole report, is deterministic.
+    std::string
+    capture_failure_report(const std::function<void(hegel::TestCase&)>& body,
+                           hegel::Settings settings = {}) {
+        settings.seed = 1;
+        settings.derandomize = false;
+        settings.database = hegel::Database::disabled();
+        testing::internal::CaptureStderr();
+        std::string rethrown = "<no exception>";
+        try {
+            hegel::test(body, settings);
+        } catch (const std::exception& e) {
+            rethrown = e.what();
+        } catch (...) {
+            rethrown = "<non-std exception>";
+        }
+        return testing::internal::GetCapturedStderr() +
+               "--- rethrown: " + rethrown + "\n";
+    }
+} // namespace
+
+// Fails on every case; the minimal counterexample is 0.
+TEST(FailureReport, SingleFailure) {
+    std::string out = capture_failure_report([](hegel::TestCase& tc) {
+        int32_t x = tc.draw(gs::integers<int32_t>());
+        throw std::runtime_error("intentional failure: " + std::to_string(x));
+    });
+    Approvals::verify(out);
+}
+
+// Fails for x >= 10; the replayed counterexample shrinks to exactly 10.
+TEST(FailureReport, OriginStableAcrossDrawnValues) {
+    std::string out = capture_failure_report([](hegel::TestCase& tc) {
+        int32_t x = tc.draw(gs::integers<int32_t>());
+        if (x >= 10) {
+            throw std::runtime_error("failure with x=" + std::to_string(x));
+        }
+    });
+    Approvals::verify(out);
+}
+
+// A non-std exception still produces the replay output before re-raising.
+TEST(FailureReport, NonStdException) {
+    std::string out = capture_failure_report([](hegel::TestCase& tc) {
+        int32_t x = tc.draw(gs::integers<int32_t>());
+        if (x >= 5) {
+            throw 42;
+        }
+    });
+    Approvals::verify(out);
+}
+
+namespace {
+    // Two distinct bugs (different exception types, so different origins):
+    // even x >= 10 shrinks to 10, odd x >= 10 shrinks to 11.
+    void two_bugs(hegel::TestCase& tc) {
+        int32_t x = tc.draw(gs::integers<int32_t>());
+        if (x >= 10 && x % 2 == 0) {
+            throw std::runtime_error("even bug with x=" + std::to_string(x));
+        }
+        if (x >= 10 && x % 2 != 0) {
+            throw std::logic_error("odd bug with x=" + std::to_string(x));
+        }
+    }
+} // namespace
+
+TEST(FailureReport, MultipleFailuresReported) {
+    std::string out = capture_failure_report(
+        two_bugs, hegel::Settings{.report_multiple_failures = true});
+    Approvals::verify(out);
+}
+
+// With report_multiple_failures off, the run stops at the first failing
+// example and the report holds a single failure.
+TEST(FailureReport, MultipleFailuresOffReportsOne) {
+    std::string out = capture_failure_report(
+        two_bugs, hegel::Settings{.report_multiple_failures = false});
+    Approvals::verify(out);
+}
+
+// The blob's base64 payload encodes engine internals and is scrubbed; the
+// snapshot pins the report layout around it.
+TEST(FailureReport, PrintBlob) {
+    std::string out = capture_failure_report(
+        [](hegel::TestCase& tc) {
+            int32_t x = tc.draw(gs::integers<int32_t>());
+            if (x >= 0) {
+                throw std::runtime_error("silly error");
+            }
+        },
+        hegel::Settings{.print_blob = true});
+    auto scrub_blob = ApprovalTests::Scrubbers::createRegexScrubber(
+        std::regex(R"(Failure blob: \S+)"), "Failure blob: [blob]");
+    Approvals::verify(out, ApprovalTests::Options(scrub_blob));
 }
 
 // ---------------------------------------------------------------------------
@@ -127,28 +179,25 @@ namespace {
     }
 } // namespace
 
-// Quiet suppresses every per-case diagnostic.
 TEST(Diagnostics, QuietSuppressesEverything) {
     std::string out =
         run_capturing_stderr(with_verbosity(hegel::Verbosity::Quiet));
-    EXPECT_FALSE(contains(out, kNote));
-    EXPECT_FALSE(contains(out, "auto draw_1"));
+    Approvals::verify(out);
 }
 
-// Normal does not print per-case notes while the property is passing (notes are
-// reserved for the final replay of a counterexample, which a passing run has).
 TEST(Diagnostics, NormalSuppressesNotesWhilePassing) {
     std::string out =
         run_capturing_stderr(with_verbosity(hegel::Verbosity::Normal));
-    EXPECT_FALSE(contains(out, kNote));
+    Approvals::verify(out);
 }
 
 // Verbose prints notes and drawn values on every case.
 TEST(Diagnostics, VerbosePrintsNotesAndValues) {
-    std::string out =
-        run_capturing_stderr(with_verbosity(hegel::Verbosity::Verbose));
-    EXPECT_TRUE(contains(out, kNote));
-    EXPECT_TRUE(contains(out, "auto draw_1 = "));
+    hegel::Settings settings = with_verbosity(hegel::Verbosity::Verbose);
+    settings.seed = 1;
+    settings.derandomize = false;
+    std::string out = run_capturing_stderr(settings);
+    Approvals::verify(out);
 }
 
 // Debug prints everything Verbose does (engine-side shrinker tracing is the
