@@ -473,8 +473,7 @@ namespace hegel::stateful {
         while (true) {
             internal::start_span(tc, internal::SpanLabel::StatefulRule);
             // gives engine more control of when to stop generating steps
-            if (internal::draw_boolean(tc, p_stop, must_stop(steps_run),
-                                       /*silent=*/true)) {
+            if (internal::draw_boolean(tc, p_stop, must_stop(steps_run))) {
                 internal::stop_span(tc);
                 if (num_steps_succeeded == 0) {
                     tc.reject();

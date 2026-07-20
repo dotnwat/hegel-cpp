@@ -226,16 +226,11 @@ namespace hegel::impl {
     // GCOVR_EXCL_STOP
 
     namespace {
-
-        // The thread's context, the borrowed test-case handle, and the
-        // verbosity flags for one draw call; every primitive below funnels
-        // through here.
         struct DrawScope {
-            const TestCase& tc_obj;
             hegel_context_t* ctx;
             hegel_test_case_t* tc;
 
-            explicit DrawScope(const TestCase& obj) : tc_obj(obj) {
+            explicit DrawScope(const TestCase& obj) {
                 ctx = thread_context();
                 tc = obj.data()->tc;
             }
@@ -264,11 +259,6 @@ namespace hegel::impl {
                                          (msg.empty() ? ")" : "): " + msg));
                 // GCOVR_EXCL_STOP
             }
-
-            // Print the drawn value in the trace.
-            void log_generated(const std::string& value) const {
-                tc_obj.note("Generated: " + value);
-            }
         };
 
         // RAII for the engine-allocated draw buffers.
@@ -287,21 +277,6 @@ namespace hegel::impl {
                 hegel_generate_string_result_free(ctx, &result);
             }
         };
-
-        // Raw field dumps for the draw trace; presentation (ISO 8601) is
-        // the generators' concern.
-        std::string raw_fields(const hegel_date_t& d) {
-            return "{year=" + std::to_string(d.year) +
-                   ", month=" + std::to_string(d.month) +
-                   ", day=" + std::to_string(d.day) + "}";
-        }
-
-        std::string raw_fields(const hegel_time_t& t) {
-            return "{hour=" + std::to_string(t.hour) +
-                   ", minute=" + std::to_string(t.minute) +
-                   ", second=" + std::to_string(t.second) +
-                   ", microsecond=" + std::to_string(t.microsecond) + "}";
-        }
 
         // Construct a string generator, converting an engine rejection into
         // std::invalid_argument at generator-construction time.
@@ -404,7 +379,6 @@ namespace hegel::impl {
                                                  &guard.result),
                            "hegel_generate_string");
         std::string value(guard.result.data, guard.result.len);
-        scope.log_generated("\"" + value + "\"");
         return value;
     }
 
@@ -417,7 +391,6 @@ namespace hegel::impl {
                            "hegel_generate_bytes");
         std::vector<uint8_t> value(guard.result.data,
                                    guard.result.data + guard.result.len);
-        scope.log_generated("<" + std::to_string(value.size()) + " bytes>");
         return value;
     }
 
@@ -428,7 +401,6 @@ namespace hegel::impl {
             hegel_generate_date(scope.ctx, scope.tc, hegel_date_t{1, 1, 1},
                                 hegel_date_t{9999, 12, 31}, &value),
             "hegel_generate_date");
-        scope.log_generated(raw_fields(value));
         return value;
     }
 
@@ -439,7 +411,6 @@ namespace hegel::impl {
             hegel_generate_time(scope.ctx, scope.tc, hegel_time_t{0, 0, 0, 0},
                                 hegel_time_t{23, 59, 59, 999999}, &value),
             "hegel_generate_time");
-        scope.log_generated(raw_fields(value));
         return value;
     }
 
@@ -452,8 +423,6 @@ namespace hegel::impl {
                                                    min_value, max_value,
                                                    &value),
                            "hegel_generate_datetime");
-        scope.log_generated("{date=" + raw_fields(value.date) +
-                            ", time=" + raw_fields(value.time) + "}");
         return value;
     }
 
@@ -470,7 +439,6 @@ namespace hegel::impl {
             throw std::runtime_error("failed to format IPv4 address");
             // GCOVR_EXCL_STOP
         }
-        scope.log_generated(buf);
         return buf;
     }
 
@@ -487,7 +455,6 @@ namespace hegel::impl {
             throw std::runtime_error("failed to format IPv6 address");
             // GCOVR_EXCL_STOP
         }
-        scope.log_generated(buf);
         return buf;
     }
 
@@ -509,7 +476,6 @@ namespace hegel::impl {
             value.push_back(kHex[bytes[i] >> 4]);
             value.push_back(kHex[bytes[i] & 0x0F]);
         }
-        scope.log_generated(value);
         return value;
     }
 
@@ -598,7 +564,6 @@ namespace hegel::internal {
         scope.raise_for_rc(hegel_generate_integer(scope.ctx, scope.tc,
                                                   min_value, max_value, &value),
                            "hegel_generate_integer");
-        scope.log_generated(std::to_string(value));
         return value;
     }
 
@@ -623,12 +588,11 @@ namespace hegel::internal {
                                        out_bytes, big_u64_len, &out_len),
             "hegel_generate_integer_big");
         uint64_t value = decode_u64_le(out_bytes);
-        scope.log_generated(std::to_string(value));
         return value;
     }
 
-    bool draw_boolean(const TestCase& tc, double p, std::optional<bool> forced,
-                      bool silent) {
+    bool draw_boolean(const TestCase& tc, double p,
+                      std::optional<bool> forced) {
         impl::DrawScope scope(tc);
         bool value = false;
         scope.raise_for_rc(
@@ -636,9 +600,6 @@ namespace hegel::internal {
                                    /*forced=*/forced.value_or(false),
                                    /*has_forced=*/forced.has_value(), &value),
             "hegel_generate_boolean");
-        if (!silent) {
-            scope.log_generated(value ? "true" : "false");
-        }
         return value;
     }
 
@@ -653,7 +614,6 @@ namespace hegel::internal {
                                allow_nan, allow_infinity, exclude_min,
                                exclude_max, smallest_nonzero_magnitude, &value),
                            "hegel_generate_float");
-        scope.log_generated(std::to_string(value));
         return value;
     }
 

@@ -57,8 +57,7 @@ namespace hegel::internal {
     uint64_t draw_integer_unsigned(const TestCase& tc, uint64_t min_value,
                                    uint64_t max_value);
     bool draw_boolean(const TestCase& tc, double p,
-                      std::optional<bool> forced = std::nullopt,
-                      bool silent = false);
+                      std::optional<bool> forced = std::nullopt);
     double draw_float(const TestCase& tc, uint32_t width, double min_value,
                       double max_value, bool allow_nan, bool allow_infinity,
                       bool exclude_min, bool exclude_max,
