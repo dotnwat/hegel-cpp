@@ -287,30 +287,20 @@ TEST(DrawNames, SuffixAllocationSkipsTakenNames) {
     Approvals::verify(out);
 }
 
-// Using one name with different repeatable flags is a programming error.
-TEST(DrawNames, InconsistentRepeatableFlagThrows) {
-    EXPECT_THROW(hegel::test(
-                     [](hegel::TestCase& tc) {
-                         (void)tc.draw(gs::just(1), "x", /*repeatable=*/true);
-                         (void)tc.draw(gs::just(2), "x");
-                     },
-                     hegel::Settings{.test_cases = 1,
-                                     .verbosity = hegel::Verbosity::Quiet,
-                                     .database = hegel::Database::disabled()}),
-                 std::logic_error);
+TEST(DrawNames, BareNameReusePrintsBare) {
+    std::string out = run_verbose([](hegel::TestCase& tc) {
+        (void)tc.draw(gs::just(1), "x");
+        (void)tc.draw(gs::just(2), "x");
+    });
+    Approvals::verify(out);
 }
 
-// Reusing a non-repeatable name is a programming error.
-TEST(DrawNames, NonRepeatableReuseThrows) {
-    EXPECT_THROW(hegel::test(
-                     [](hegel::TestCase& tc) {
-                         (void)tc.draw(gs::just(1), "x");
-                         (void)tc.draw(gs::just(2), "x");
-                     },
-                     hegel::Settings{.test_cases = 1,
-                                     .verbosity = hegel::Verbosity::Quiet,
-                                     .database = hegel::Database::disabled()}),
-                 std::logic_error);
+TEST(DrawNames, MixedRepeatableAndBareUses) {
+    std::string out = run_verbose([](hegel::TestCase& tc) {
+        (void)tc.draw(gs::just(1), "x", /*repeatable=*/true);
+        (void)tc.draw(gs::just(2), "x");
+    });
+    Approvals::verify(out);
 }
 
 // HEGEL_DRAW declares the variable and prints under its name.

@@ -419,8 +419,8 @@ namespace hegel {
  * //                auto y = 3;
  * @endcode
  *
- * The name is non-repeatable. To draw under the same name more than once
- * per test case (e.g. in a loop), call `tc.draw(gen, "name", true)`.
+ * The name prints bare on every use. To number repeated draws instead
+ * (`var_1`, `var_2`, ...), call `tc.draw(gen, "name", true)`.
  *
  * @param var Name of the local variable to declare.
  * @param tc The current hegel::TestCase.

@@ -1,9 +1,9 @@
 Starting phase: Generate
 Step 1: step
-  auto draw_1 = 1;
+  auto amount = 1;
 Step 2: step
-  auto draw_2 = 1;
+  auto amount = 1;
 Step 3: step
-  auto draw_3 = 1;
+  auto amount = 1;
 Ending phase: Generate
 

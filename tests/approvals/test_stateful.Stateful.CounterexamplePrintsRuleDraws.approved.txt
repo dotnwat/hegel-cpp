@@ -1,3 +1,5 @@
 Step 1: add
-  auto draw_1 = 3;
+  auto amount = 3;
+Step 2: add
+  auto amount = 9;
 

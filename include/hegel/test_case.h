@@ -63,11 +63,10 @@ namespace hegel {
          *             Draws with no name print as `draw_1`, `draw_2`, ...
          *             in draw order. See also @ref HEGEL_DRAW, which
          *             captures the name automatically.
-         * @param repeatable Pass true when the same @p name is drawn more
-         *             than once per test case (e.g. in a loop). Repeatable
-         *             draws print with a 1-based suffix (`x_1`, `x_2`,
-         *             ...). A non-repeatable name prints without the suffix and
-         *             throws std::logic_error if it is reused.
+         * @param repeatable Pass true to print @p name with a 1-based
+         *             suffix per use (`x_1`, `x_2`, ...). Useful when the
+         *             same draw runs in a loop. A non-repeatable name
+         *             prints bare on every use.
          * @return A freshly generated value of type T
          */
         template <typename T>

@@ -144,11 +144,12 @@ namespace {
     struct Adder : hegel::stateful::StateMachine<Adder> {
         int s = 0;
         std::vector<hegel::stateful::Rule<Adder>> rules() {
-            return {hegel::stateful::Rule<Adder>(
-                "step", [](hegel::TestCase& tc, Adder& m) {
-                    m.s += tc.draw(
-                        gs::integers<int>({.min_value = 1, .max_value = 9}));
-                })};
+            return {hegel::stateful::Rule<Adder>("step", [](hegel::TestCase& tc,
+                                                            Adder& m) {
+                m.s +=
+                    tc.draw(gs::integers<int>({.min_value = 1, .max_value = 9}),
+                            "amount");
+            })};
         }
     };
 } // namespace
@@ -218,8 +219,9 @@ TEST(Stateful, CounterexamplePrintsRuleDraws) {
             return {hegel::stateful::Rule<Overflowing>(
                 "add", [](hegel::TestCase& tc, Overflowing& m) {
                     m.s += tc.draw(
-                        gs::integers<int>({.min_value = 1, .max_value = 9}));
-                    if (m.s >= 3) {
+                        gs::integers<int>({.min_value = 1, .max_value = 9}),
+                        "amount");
+                    if (m.s >= 12) {
                         throw std::runtime_error("accumulator overflowed");
                     }
                 })};
