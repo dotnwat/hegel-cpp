@@ -307,7 +307,7 @@ TEST(DrawNames, MixedRepeatableAndBareUses) {
 TEST(DrawNames, MacroBindsAndPrints) {
     int seen = 0;
     std::string out = run_verbose([&seen](hegel::TestCase& tc) {
-        HEGEL_DRAW(width, tc, gs::just(7));
+        HEGEL_DRAW(tc, width, gs::just(7));
         seen = width;
     });
     EXPECT_EQ(seen, 7);

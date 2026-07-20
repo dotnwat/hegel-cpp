@@ -29,12 +29,12 @@ namespace hegel {
      * fresh owning @c TestCase. It must not outlive the test-case callback.
      *
      * @code{.cpp}
-     * hegel::test([](hegel::TestCase& tc) {
+     * HEGEL_TEST(example)(hegel::TestCase& tc) {
      *     namespace gs = hegel::generators;
-     *     auto x = tc.draw(gs::integers<int>({.min_value = 0}));
+     *     HEGEL_DRAW(tc, x, gs::integers<int>({.min_value = 0}));
      *     tc.assume(x != 0);
      *     tc.note("x = " + std::to_string(x));
-     * });
+     * }
      * @endcode
      */
     class TestCase {

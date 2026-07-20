@@ -50,7 +50,7 @@
  * namespace gs = hegel::generators;
  *
  * HEGEL_TEST(self_equality)(hegel::TestCase& tc) {
- *     int n = tc.draw(gs::integers<int>());
+ *     HEGEL_DRAW(tc, n, gs::integers<int>());
  *     if (n != n) { // integers should always be equal to themselves
  *         throw std::runtime_error("self-equality failed");
  *     }
@@ -76,11 +76,17 @@
  * Hegel's example database, so a failure found in one run is replayed first
  * in the next.
  *
+ * @ref HEGEL_DRAW declares the variable and draws into in one step. You should
+ * use this macro for drawing values. It records the variable's name so a
+ * failing run replays each drawn value with the variable it was assigned to
+ * (e.g. `auto n = 42`). The underlying @tc{draw}() call is still available
+ * where a macro doesn't fit.
+ *
  * Next, try a test that fails:
  *
  * @code{.cpp}
  * HEGEL_TEST(below_50)(hegel::TestCase& tc) {
- *     int n = tc.draw(gs::integers<int>());
+ *     HEGEL_DRAW(tc, n, gs::integers<int>());
  *     if (n >= 50) { // this will fail!
  *         throw std::runtime_error("n should be below 50");
  *     }
@@ -89,15 +95,15 @@
  *
  * This test asserts that any integer is less than 50, which is obviously
  * incorrect. Hegel will find a test case that makes this assertion fail,
- * and then shrink it to find the smallest counterexample — in this case,
- * `n = 50`.
+ * and then shrink it to find the smallest counterexample. The replay
+ * prints `auto n = 50;`.
  *
  * To fix this test, you can constrain the integers you generate with the
  * `min_value` and `max_value` parameters:
  *
  * @code{.cpp}
  * HEGEL_TEST(below_50)(hegel::TestCase& tc) {
- *     int n = tc.draw(gs::integers<int>({.min_value = 0, .max_value = 49}));
+ *     HEGEL_DRAW(tc, n, gs::integers<int>({.min_value = 0, .max_value = 49}));
  *     if (n >= 50) {
  *         throw std::runtime_error("n should be below 50");
  *     }
@@ -119,7 +125,7 @@
  * namespace gs = hegel::generators;
  *
  * HEGEL_TEST(push_back_grows)(hegel::TestCase& tc) {
- *     auto vector = tc.draw(gs::vectors(gs::integers<int>()));
+ *     HEGEL_DRAW(tc, vector, gs::vectors(gs::integers<int>()));
  *     auto initial_length = vector.size();
  *     vector.push_back(tc.draw(gs::integers<int>()));
  *     if (vector.size() <= initial_length) {
@@ -183,7 +189,7 @@
  * };
  *
  * HEGEL_TEST(generate_people)(hegel::TestCase& tc) {
- *     Person p = tc.draw(gs::default_generator<Person>());
+ *     HEGEL_DRAW(tc, p, gs::default_generator<Person>());
  * }
  * @endcode
  *
@@ -196,8 +202,8 @@
  *
  * @code{.cpp}
  * HEGEL_TEST(addition_commutes)(hegel::TestCase& tc) {
- *     int x = tc.draw(gs::integers<int>());
- *     int y = tc.draw(gs::integers<int>());
+ *     HEGEL_DRAW(tc, x, gs::integers<int>());
+ *     HEGEL_DRAW(tc, y, gs::integers<int>());
  *     tc.note("x + y = " + std::to_string(x + y) +
  *             ", y + x = " + std::to_string(y + x));
  *     if (x + y != y + x) {
@@ -206,7 +212,8 @@
  * }
  * @endcode
  *
- * Notes only appear when Hegel replays the minimal failing example.
+ * Drawn values print automatically on that replay (`auto x = ...;`).
+ * Notes add whatever extra context the values alone do not show.
  *
  * @subsection change_test_cases Change the number of test cases
  *
@@ -215,7 +222,7 @@
  *
  * @code{.cpp}
  * HEGEL_TEST(self_equality, {.test_cases = 500})(hegel::TestCase& tc) {
- *     int n = tc.draw(gs::integers<int>());
+ *     HEGEL_DRAW(tc, n, gs::integers<int>());
  *     if (n != n) {
  *         throw std::runtime_error("self-equality failed");
  *     }
@@ -234,7 +241,7 @@
  *
  * @code{.cpp}
  * hegel::test([](hegel::TestCase& tc) {
- *     int n = tc.draw(gs::integers<int>());
+ *     HEGEL_DRAW(tc, n, gs::integers<int>());
  *     if (n != n) {
  *         throw std::runtime_error("self-equality failed");
  *     }
@@ -410,23 +417,26 @@ namespace hegel {
  * draw under the variable's own name:
  *
  * @code{.cpp}
- * hegel::test([](hegel::TestCase& tc) {
- *     HEGEL_DRAW(x, tc, gs::integers<int>());
- *     HEGEL_DRAW(y, tc, gs::integers<int>());
+ * HEGEL_TEST(addition_commutes)(hegel::TestCase& tc) {
+ *     HEGEL_DRAW(tc, x, gs::integers<int>());
+ *     HEGEL_DRAW(tc, y, gs::integers<int>());
  *     if (x + y != y + x) throw std::runtime_error("not commutative");
- * });
+ * }
  * // replay output: auto x = 10;
  * //                auto y = 3;
  * @endcode
  *
+ * Prefer this macro over a plain @tc{draw}() for every draw bound to a
+ * variable, since it includes the variable name in the counterexample printing.
+ *
  * The name prints bare on every use. To number repeated draws instead
  * (`var_1`, `var_2`, ...), call `tc.draw(gen, "name", true)`.
  *
- * @param var Name of the local variable to declare.
  * @param tc The current hegel::TestCase.
+ * @param var Name of the local variable to declare.
  * @param ... The generator expression to draw from.
  */
-#define HEGEL_DRAW(var, tc, ...) auto var = (tc).draw((__VA_ARGS__), #var)
+#define HEGEL_DRAW(tc, var, ...) auto var = (tc).draw((__VA_ARGS__), #var)
 
 /**
  * @brief Replay a failing example for a @ref HEGEL_TEST from its blob.
