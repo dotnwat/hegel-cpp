@@ -1,0 +1,3 @@
+Starting phase: Generate
+auto draw_1 = 3;
+Ending phase: Generate

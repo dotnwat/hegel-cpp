@@ -21,8 +21,9 @@ cmake -B build && cmake --build build
 ctest --test-dir build -R test_name
 ```
 
-## Comments
+## VERY IMPORTANT: Comments
 
+- Adhere to ADS-STE100 Simplified Technical English
 - After making a change, do not describe what code was there previously and why 
 the code was changed.
 - Do not mention Hypothesis, or any other Hegel library, even when the user prompts

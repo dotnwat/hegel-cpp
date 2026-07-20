@@ -1,7 +1,11 @@
 #include <gtest/gtest.h>
 #include <hegel/hegel.h>
 
+#include <ApprovalTests.hpp>
+
 namespace gs = hegel::generators;
+
+using ApprovalTests::Approvals;
 
 TEST(Pools, PoolsRoundTrip) {
     hegel::test([](hegel::TestCase& tc) {
@@ -204,8 +208,35 @@ TEST(Stateful, TraceNestsDrawsAndHidesStopDecision) {
     std::string out = testing::internal::GetCapturedStderr();
 
     // a step's draw is nested two spaces under its header.
-    EXPECT_NE(out.find("  Generated:"), std::string::npos) << out;
+    EXPECT_NE(out.find("  auto draw_"), std::string::npos) << out;
     // the stop-decision boolean is not printed.
-    EXPECT_EQ(out.find("Generated: true"), std::string::npos) << out;
-    EXPECT_EQ(out.find("Generated: false"), std::string::npos) << out;
+    EXPECT_EQ(out.find("= true;"), std::string::npos) << out;
+    EXPECT_EQ(out.find("= false;"), std::string::npos) << out;
+}
+
+TEST(Stateful, CounterexamplePrintsRuleDraws) {
+    struct Overflowing : hegel::stateful::StateMachine<Overflowing> {
+        int s = 0;
+        std::vector<hegel::stateful::Rule<Overflowing>> rules() {
+            return {hegel::stateful::Rule<Overflowing>(
+                "add", [](hegel::TestCase& tc, Overflowing& m) {
+                    m.s += tc.draw(
+                        gs::integers<int>({.min_value = 1, .max_value = 9}));
+                    if (m.s >= 3) {
+                        throw std::runtime_error("accumulator overflowed");
+                    }
+                })};
+        }
+    };
+    testing::internal::CaptureStderr();
+    EXPECT_THROW(hegel::test(
+                     [](hegel::TestCase& tc) {
+                         Overflowing machine;
+                         hegel::stateful::run(machine, tc);
+                     },
+                     hegel::Settings{.database = hegel::Database::disabled(),
+                                     .stateful_step_count = 5}),
+                 std::runtime_error);
+    std::string out = testing::internal::GetCapturedStderr();
+    Approvals::verify(out);
 }
