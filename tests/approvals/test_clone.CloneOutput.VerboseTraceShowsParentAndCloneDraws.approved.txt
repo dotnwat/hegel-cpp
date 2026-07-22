@@ -1,0 +1,14 @@
+Starting phase: Generate
+SENTINEL_NOTE
+Generated: 0
+Generated: 0
+Running test case
+SENTINEL_NOTE
+Generated: 1024
+Generated: -8388607
+Running test case
+SENTINEL_NOTE
+Generated: -1633
+Generated: 511
+Ending phase: Generate
+

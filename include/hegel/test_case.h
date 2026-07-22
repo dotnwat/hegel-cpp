@@ -1,8 +1,12 @@
 #pragma once
 
 #include <functional>
+#include <future>
 #include <memory>
 #include <string_view>
+#include <thread>
+#include <type_traits>
+#include <utility>
 
 namespace hegel::impl::test_case {
     struct TestCaseData;
@@ -126,15 +130,14 @@ namespace hegel {
         void note(std::string_view message) const;
 
         /**
-         * @brief Fork an independent draw stream of a test case.
+         * @brief Creates a clone of this test case with an independent choice
+         * sequence forked from this test case.
          *
          * The returned @c TestCase draws from its own choice sequence but
-         * shares this case's outcome and budget, so it can be driven
-         * concurrently on another thread (each handle by one thread at a time).
-         * Generation and shrinking are deterministic under replay as long as
-         * the system under test is deterministic.
+         * shares this case's outcome and budget. A single test case must not be
+         * drawn from concurrently, so give each thread its own clone.
          *
-         * @return A fresh owning @c TestCase on an independent stream.
+         * @return A @c TestCase.
          *
          * @code{.cpp}
          * auto worker = tc.clone();
@@ -143,6 +146,29 @@ namespace hegel {
          * @endcode
          */
         TestCase clone() const;
+
+        /**
+         * @brief Run @p fn on a clone of this test case in a new thread.
+         *
+         * Clones this test case on the calling thread, then invokes @p fn with
+         * the clone (as a @c TestCase&) on a @c std::thread. The returned
+         * @c Worker awaits it. @c Worker::join() returns @p fn's result and
+         * re-raises any exception it threw. Join every worker before the test
+         * body returns.
+         *
+         * @tparam F Callable invocable as @c fn(TestCase&).
+         * @param fn The work to run on the cloned stream.
+         * @return A @c Worker handle to the running thread.
+         *
+         * @code{.cpp}
+         * auto w = tc.spawn([](hegel::TestCase& c) {
+         *     return c.draw(gs::integers<int>());
+         * });
+         * auto mine = tc.draw(gs::integers<int>());
+         * auto theirs = w.join();
+         * @endcode
+         */
+        template <typename F> auto spawn(F fn) const;
 
         /// @cond INTERNAL
         explicit TestCase(std::unique_ptr<impl::test_case::TestCaseData> data);
@@ -155,5 +181,53 @@ namespace hegel {
       private:
         std::unique_ptr<impl::test_case::TestCaseData> data_;
     };
+
+    /**
+     * @brief Handle to a worker started by TestCase::spawn().
+     *
+     * Move-only. @c join() awaits the worker and returns its result,
+     * re-raising any exception it threw. The destructor joins if @c join() was
+     * never called.
+     */
+    template <typename T> class Worker {
+      public:
+        Worker(std::thread thread, std::future<T> future)
+            : thread_(std::move(thread)), future_(std::move(future)) {}
+        Worker(Worker&&) noexcept = default;
+        Worker(const Worker&) = delete;
+        Worker& operator=(const Worker&) = delete;
+        ~Worker() {
+            if (thread_.joinable()) {
+                thread_.join();
+            }
+        }
+
+        /**
+         * @brief Await the worker and return its result.
+         *
+         * Re-raises any exception thrown on the worker thread. Call at most
+         * once, before the test body returns.
+         */
+        T join() {
+            if (thread_.joinable()) {
+                thread_.join();
+            }
+            return future_.get();
+        }
+
+      private:
+        std::thread thread_;
+        std::future<T> future_;
+    };
+
+    template <typename F> auto TestCase::spawn(F fn) const {
+        using R = std::invoke_result_t<F, TestCase&>;
+        std::packaged_task<R()> task(
+            [fn = std::move(fn), cloned_tc = clone()]() mutable {
+                return fn(cloned_tc);
+            });
+        std::future<R> future = task.get_future();
+        return Worker<R>(std::thread(std::move(task)), std::move(future));
+    }
 
 } // namespace hegel
