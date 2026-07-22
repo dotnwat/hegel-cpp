@@ -61,8 +61,7 @@ TEST(Clone, ConcurrentTwoThreads) {
     hegel::test(
         [&](hegel::TestCase& tc) {
             hegel::TestCase worker = tc.clone();
-            std::thread t(
-                [&] { worker_value = worker.draw(small_int()); });
+            std::thread t([&] { worker_value = worker.draw(small_int()); });
             int main_value = tc.draw(small_int());
             t.join();
             EXPECT_GE(main_value, 0);

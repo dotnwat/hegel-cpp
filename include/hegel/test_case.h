@@ -1,6 +1,7 @@
 #pragma once
 
 #include <functional>
+#include <memory>
 #include <string_view>
 
 namespace hegel::impl::test_case {
@@ -19,9 +20,9 @@ namespace hegel {
      * A @c TestCase is passed as the sole argument to the callback given to
      * hegel::test(). It is the main way a test definition interacts with Hegel.
      *
-     * @c TestCase is a non-owning handle into state managed by the Hegel
-     * runner. It is neither copyable nor movable, and must not outlive the
-     * test-case callback.
+     * @c TestCase owns its underlying libhegel handle and is move-only (not
+     * copyable). The callback receives it by reference; a @c clone() returns a
+     * fresh owning @c TestCase. It must not outlive the test-case callback.
      *
      * @code{.cpp}
      * hegel::test([](hegel::TestCase& tc) {
@@ -36,8 +37,9 @@ namespace hegel {
       public:
         TestCase(const TestCase&) = delete;
         TestCase& operator=(const TestCase&) = delete;
-        TestCase(TestCase&&) = delete;
-        TestCase& operator=(TestCase&&) = delete;
+        TestCase(TestCase&&) noexcept;
+        TestCase& operator=(TestCase&&) noexcept;
+        ~TestCase();
 
         /**
          * @brief Draw a random value from a generator.
@@ -123,16 +125,35 @@ namespace hegel {
          */
         void note(std::string_view message) const;
 
+        /**
+         * @brief Fork an independent draw stream of a test case.
+         *
+         * The returned @c TestCase draws from its own choice sequence but
+         * shares this case's outcome and budget, so it can be driven
+         * concurrently on another thread (each handle by one thread at a time).
+         * Generation and shrinking are deterministic under replay as long as
+         * the system under test is deterministic.
+         *
+         * @return A fresh owning @c TestCase on an independent stream.
+         *
+         * @code{.cpp}
+         * auto worker = tc.clone();
+         * auto a = worker.draw(gs::integers<int>());
+         * auto b = tc.draw(gs::integers<int>());
+         * @endcode
+         */
+        TestCase clone() const;
+
         /// @cond INTERNAL
-        explicit TestCase(impl::test_case::TestCaseData* data) : data_(data) {}
+        explicit TestCase(std::unique_ptr<impl::test_case::TestCaseData> data);
 
         // Generators reach through this accessor to talk to the backend.
         // Not part of the user-facing API.
-        impl::test_case::TestCaseData* data() const { return data_; }
+        impl::test_case::TestCaseData* data() const { return data_.get(); }
         /// @endcond
 
       private:
-        impl::test_case::TestCaseData* data_;
+        std::unique_ptr<impl::test_case::TestCaseData> data_;
     };
 
 } // namespace hegel
