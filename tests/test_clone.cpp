@@ -23,8 +23,8 @@ namespace {
     // One test case, no shrinking, no database — the C++ analog of
     // test_clone.ml's `single_settings`.
     hegel::Settings single() {
-        return {.mode = hegel::Mode::SingleTestCase,
-                .database = hegel::Database::disabled()};
+        return {.database = hegel::Database::disabled(),
+                .mode = hegel::Mode::SingleTestCase};
     }
 
     gs::Generator<int> small_int() {
@@ -84,8 +84,8 @@ TEST(Clone, ReproducibleUnderSeed) {
                 drawn = {p, c};
             },
             hegel::Settings{.seed = 42,
-                            .mode = hegel::Mode::SingleTestCase,
-                            .database = hegel::Database::disabled()});
+                            .database = hegel::Database::disabled(),
+                            .mode = hegel::Mode::SingleTestCase});
         return drawn;
     };
     EXPECT_EQ(run(), run());
@@ -144,6 +144,41 @@ TEST(Clone, SpawnJoinReraises) {
         },
         single());
     EXPECT_TRUE(raised);
+}
+
+// Move-assigning a clone transfers its stream; the target releases its previous
+// handle and the source becomes inert.
+TEST(Clone, MoveAssignTransfersStream) {
+    int value = -1;
+    hegel::test(
+        [&](hegel::TestCase& tc) {
+            hegel::TestCase a = tc.clone();
+            hegel::TestCase b = tc.clone();
+            a = std::move(b);
+            value = a.draw(small_int());
+        },
+        single());
+    EXPECT_GE(value, 0);
+    EXPECT_LE(value, 9);
+}
+
+// A worker left un-joined is joined by its destructor rather than terminating.
+// The worker records its draw before finishing, so a completed value proves the
+// destructor joined a finished thread (the result is published under the join's
+// happens-before edge).
+TEST(Clone, WorkerDestructorJoinsIfNotJoined) {
+    int worker_value = -1;
+    hegel::test(
+        [&](hegel::TestCase& tc) {
+            auto worker = tc.spawn([&](hegel::TestCase& w) {
+                worker_value = w.draw(small_int());
+                return 0;
+            });
+            // Leaves scope without join(); the destructor joins the thread.
+        },
+        single());
+    EXPECT_GE(worker_value, 0);
+    EXPECT_LE(worker_value, 9);
 }
 
 // ---------------------------------------------------------------------------

@@ -91,6 +91,7 @@ Spans exist so the shrinker can reason about a group of draws as a unit; open on
 - **File organization**: Each focused `.cpp` has a corresponding `.h` in `src/`. Private headers live in `src/`, not `include/`
 - **Public API surface**: Minimal. Only what users need goes in `include/hegel/`. Internal details hidden via `@cond INTERNAL` / `@endcond` in Doxygen
 - **Parameter structs**: Designated initializers (C++20): `integers<int>({.min_value = 0})`
+- **Designated initializer order**: Always list designators in declaration order. Out-of-order designators are a hard error under GCC (Clang only accepts them as an extension), so a reordering that builds locally on Clang still breaks the GCC CI jobs.
 - **Self-contained**: Prefer small standalone implementations over adding heavy dependencies
 
 ### Error Handling: `TestCase::assume()` vs exceptions

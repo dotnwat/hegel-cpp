@@ -19,9 +19,8 @@ TEST(AlgebraicProperties, AdditionIsCommutative) {
         auto y = tc.draw(gs::integers<int32_t>());
         tc.note("Testing: " + std::to_string(x) + " + " + std::to_string(y));
 
-        // Use wrapping arithmetic to avoid undefined behavior
-        int32_t lhs = x + y;
-        int32_t rhs = y + x;
+        uint32_t lhs = static_cast<uint32_t>(x) + static_cast<uint32_t>(y);
+        uint32_t rhs = static_cast<uint32_t>(y) + static_cast<uint32_t>(x);
         ASSERT_EQ(lhs, rhs) << "Addition should be commutative";
     });
 }
@@ -32,8 +31,10 @@ TEST(AlgebraicProperties, MultiplicationIsCommutative) {
         auto y = tc.draw(gs::integers<int32_t>());
         tc.note("Testing: " + std::to_string(x) + " * " + std::to_string(y));
 
-        int32_t lhs = x * y;
-        int32_t rhs = y * x;
+        // Unsigned arithmetic wraps by definition (signed overflow is UB);
+        // commutativity holds bit-for-bit.
+        uint32_t lhs = static_cast<uint32_t>(x) * static_cast<uint32_t>(y);
+        uint32_t rhs = static_cast<uint32_t>(y) * static_cast<uint32_t>(x);
         ASSERT_EQ(lhs, rhs) << "Multiplication should be commutative";
     });
 }

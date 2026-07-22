@@ -9,6 +9,25 @@ build:
 check-tests: build
     ctest --test-dir build/tests --output-on-failure -j{{ jobs }}
 
+# Build + run the suite under sanitizers. address+undefined and thread are
+# separate, mutually exclusive builds. Verifies handle-ownership (no leak /
+# double-free / use-after-free) and thread-safety of clone()/spawn(), which the
+# coverage gate cannot check. LeakSanitizer runs on Linux (unsupported on macOS).
+check-sanitizers: (check-sanitizer "address,undefined") (check-sanitizer "thread")
+
+check-sanitizer SANITIZERS:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    dir="build/san-$(echo '{{ SANITIZERS }}' | tr ',' '-')"
+    cmake -B "$dir" -DHEGEL_SANITIZE='{{ SANITIZERS }}' ${CMAKE_FLAGS:-}
+    cmake --build "$dir" -j{{ jobs }}
+    # LeakSanitizer is on by default under ASan on Linux and unsupported on
+    # macOS, so detect_leaks is left at its platform default rather than forced.
+    ASAN_OPTIONS=halt_on_error=1 \
+    UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1 \
+    TSAN_OPTIONS=halt_on_error=1 \
+        ctest --test-dir "$dir/tests" --output-on-failure -j{{ jobs }}
+
 format:
     find . \( -name "*.cpp" -o -name "*.h" -o -name "*.hpp" \) ! -path "./build/*" \
         | xargs uvx clang-format -i

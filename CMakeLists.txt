@@ -15,6 +15,11 @@ option(HEGEL_BUILD_TESTS "Build unit tests" ${_hegel_default_tests})
 option(HEGEL_BUILD_DOCS "Build documentation" OFF)
 option(HEGEL_COVERAGE "Build with coverage instrumentation" OFF)
 
+# Sanitizers to build with, as a -fsanitize argument (e.g. "address,undefined"
+# or "thread"). Empty disables. address+undefined and thread are separate,
+# mutually exclusive builds; see the `check-sanitizers` just recipe.
+set(HEGEL_SANITIZE "" CACHE STRING "Sanitizers to build with (-fsanitize value)")
+
 # default_generator (type-directed derivation) uses reflect-cpp, which requires
 # C++20. Turn this OFF to drop reflect-cpp and consume hegel from C++17; you
 # lose default_generator but everything else still works.
@@ -31,6 +36,11 @@ if(HEGEL_COVERAGE)
     # Lets test binaries that die via abort() (uncaught exceptions) flush
     # their profile data manually; see tests/subject_main.cpp.
     add_compile_definitions(HEGEL_COVERAGE_BUILD)
+endif()
+
+if(HEGEL_SANITIZE)
+    add_compile_options(-fsanitize=${HEGEL_SANITIZE} -fno-omit-frame-pointer -g)
+    add_link_options(-fsanitize=${HEGEL_SANITIZE})
 endif()
 
 # Acquire libhegel (Hegel's native engine, called in-process via its C ABI)
