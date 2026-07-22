@@ -28,6 +28,7 @@ the code was changed.
 - Do not mention Hypothesis, or any other Hegel library, even when the user prompts
 you to port a feature from there.
 - Comments should not duplicate the code.
+- Adhere to ASD-STE100 Simplified Technical English
 
 ## Dependencies
 

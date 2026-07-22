@@ -37,6 +37,9 @@ endif()
 # and expose it as the imported target hegel::libhegel.
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/libhegel.cmake)
 
+# spawn()/Worker in the public headers use std::thread / std::future.
+find_package(Threads REQUIRED)
+
 include(FetchContent)
 
 if(HEGEL_REFLECTION)
@@ -84,6 +87,8 @@ target_link_libraries(hegel
     # installed consumers get it re-created by hegelConfig.cmake (which points
     # at the dylib shipped beside the static lib).
     $<BUILD_INTERFACE:hegel::libhegel>
+    # spawn()/Worker run test bodies on std::thread; PUBLIC so consumers link it.
+    Threads::Threads
 )
 
 if(HEGEL_REFLECTION)
