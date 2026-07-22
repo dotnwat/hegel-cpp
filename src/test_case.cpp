@@ -4,13 +4,44 @@
 #include <engine.h>
 #include <test_case.h>
 
+#include <hegel.h>
+
 #include <cstdint>
 #include <functional>
 #include <iostream>
+#include <memory>
 #include <string>
 #include <string_view>
+#include <utility>
+
+namespace hegel::impl::test_case {
+
+    TestCaseData::~TestCaseData() {
+        if (tc != nullptr) {
+            hegel_test_case_free(thread_context(), tc);
+        }
+    }
+
+} // namespace hegel::impl::test_case
 
 namespace hegel {
+
+    TestCase::TestCase(std::unique_ptr<impl::test_case::TestCaseData> data)
+        : data_(std::move(data)) {}
+
+    TestCase::TestCase(TestCase&&) noexcept = default;
+    TestCase& TestCase::operator=(TestCase&&) noexcept = default;
+    TestCase::~TestCase() = default;
+
+    TestCase TestCase::clone() const {
+        hegel_test_case_t* handle =
+            impl::test_case_clone(impl::thread_context(), data_->tc);
+        auto cloned = std::unique_ptr<impl::test_case::TestCaseData>(
+            new impl::test_case::TestCaseData{
+                handle, data_->is_final, data_->verbosity,
+                data_->stateful_step_count, data_->mode, data_->note_indent});
+        return TestCase(std::move(cloned));
+    }
 
     void TestCase::assume(bool condition) const {
         if (!condition) {

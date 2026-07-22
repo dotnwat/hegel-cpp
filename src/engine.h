@@ -63,6 +63,11 @@ namespace hegel::impl {
     /// NULL once the engine has no more cases to hand out. The returned
     /// handle is caller-owned; release it with hegel_test_case_free.
     hegel_test_case_t* next_test_case(hegel_context_t* ctx, hegel_run_t* run);
+
+    /// Fork an independent draw stream of `tc` (shared outcome/budget). The
+    /// returned handle is caller-owned; release it with hegel_test_case_free.
+    hegel_test_case_t* test_case_clone(hegel_context_t* ctx,
+                                       const hegel_test_case_t* tc);
     void mark_complete(hegel_context_t* ctx, hegel_test_case_t* tc,
                        hegel_status_t status, const char* origin);
 

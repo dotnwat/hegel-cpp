@@ -12,10 +12,9 @@
 
 namespace hegel::impl::test_case {
 
-    // Per-iteration runtime state. `tc` is a borrowed libhegel handle owned
-    // by the run loop (src/hegel.cpp); generators reach it through
-    // TestCase::data() to drive the typed draw primitives. (The
-    // error-reporting context is per-thread: impl::thread_context().)
+    // Per-case runtime state.
+    // Generators reach `tc` through TestCase::data() to drive the typed draw
+    // primitives. (The error-reporting context is per-thread.
     struct TestCaseData {
         hegel_test_case_t* tc;
         bool is_final;
@@ -23,6 +22,10 @@ namespace hegel::impl::test_case {
         int64_t stateful_step_count;
         Mode mode;
         int note_indent = 0;
+
+        // Releases the owned libhegel handle. The owning TestCase's
+        // unique_ptr runs this on scope exit.
+        ~TestCaseData();
 
         // leading whitespace for a printed note/drawn value at the current
         // nesting depth.

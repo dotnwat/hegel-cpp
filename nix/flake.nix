@@ -86,6 +86,12 @@
           tag = "v0.22.0";
           hash = "sha256-5Og3+dM3QuCX6sT+6Rz8vwvyzQb+8qz10ROk9yOMPgE=";
         };
+        approvaltests = pkgs.fetchFromGitHub {
+          owner = "approvals";
+          repo = "ApprovalTests.cpp";
+          tag = "v.10.13.0";
+          hash = "sha256-Z9VI+OmvGyzBZ5hU0O+xn2hgNMDYTUQCl+k/i965n5Q=";
+        };
       };
 
       # Generate CMake flags for FetchContent sources
@@ -98,6 +104,7 @@
         lib.mapAttrsToList (k: v: lib.cmakeFeature k (toString v)) {
           FETCHCONTENT_SOURCE_DIR_REFLECTCPP = deps.reflectcpp;
           FETCHCONTENT_SOURCE_DIR_GOOGLETEST = pkgs.gtest.src;
+          FETCHCONTENT_SOURCE_DIR_APPROVALTESTS = deps.approvaltests;
           FETCHCONTENT_FULLY_DISCONNECTED = "ON";
         };
 

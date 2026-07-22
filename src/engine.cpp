@@ -162,6 +162,13 @@ namespace hegel::impl {
         return tc;
     }
 
+    hegel_test_case_t* test_case_clone(hegel_context_t* ctx,
+                                       const hegel_test_case_t* tc) {
+        hegel_test_case_t* clone = nullptr;
+        check_rc(ctx, hegel_test_case_clone(ctx, tc, &clone));
+        return clone;
+    }
+
     void mark_complete(hegel_context_t* ctx, hegel_test_case_t* tc,
                        hegel_status_t status, const char* origin) {
         check_rc(ctx, hegel_mark_complete(ctx, tc, status, origin));

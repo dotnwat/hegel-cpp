@@ -28,6 +28,7 @@ the code was changed.
 - Do not mention Hypothesis, or any other Hegel library, even when the user prompts
 you to port a feature from there.
 - Comments should not duplicate the code.
+- Adhere to ASD-STE100 Simplified Technical English
 
 ## Dependencies
 
@@ -66,7 +67,7 @@ Public headers in `include/hegel/`:
 
 Private implementation in `src/`:
 - **`engine.{h,cpp}`** - Wrappers over the libhegel C ABI: run-lifecycle helpers (`hegel::impl`), string-generator construction, and the draw-primitive implementations (including `Generated:` logging on the final replay / at Verbose+)
-- **`test_case.{h,cpp}`** - Private `TestCaseData` struct (holds the borrowed `hegel_context_t*` / `hegel_test_case_t*` plus per-iteration state) and the `TestCase` method implementations
+- **`test_case.{h,cpp}`** - Private `TestCaseData` struct (owns the `hegel_test_case_t*` — freed in its destructor — plus per-iteration state; the error-reporting context is per-thread via `impl::thread_context()`) and the `TestCase` method implementations
 - **`generators.cpp` / `hegel.cpp`** - implementations for the corresponding public headers; `hegel.cpp` also holds the `hegel::test()` run loop
 - **`cmake/libhegel.cmake`** - downloads/verifies/links libhegel and exposes the `hegel::libhegel` imported target; `libhegel/hegel.h` is the vendored C ABI header
 
@@ -90,6 +91,7 @@ Spans exist so the shrinker can reason about a group of draws as a unit; open on
 - **File organization**: Each focused `.cpp` has a corresponding `.h` in `src/`. Private headers live in `src/`, not `include/`
 - **Public API surface**: Minimal. Only what users need goes in `include/hegel/`. Internal details hidden via `@cond INTERNAL` / `@endcond` in Doxygen
 - **Parameter structs**: Designated initializers (C++20): `integers<int>({.min_value = 0})`
+- **Designated initializer order**: Always list designators in declaration order. Out-of-order designators are a hard error under GCC (Clang only accepts them as an extension), so a reordering that builds locally on Clang still breaks the GCC CI jobs.
 - **Self-contained**: Prefer small standalone implementations over adding heavy dependencies
 
 ### Error Handling: `TestCase::assume()` vs exceptions

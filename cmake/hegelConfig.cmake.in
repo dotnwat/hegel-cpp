@@ -9,6 +9,9 @@ if(HEGEL_REFLECTION)
     find_dependency(reflectcpp)
 endif()
 
+# spawn()/Worker in the public headers pull in std::thread.
+find_dependency(Threads)
+
 include("${CMAKE_CURRENT_LIST_DIR}/hegelTargets.cmake")
 
 # hegel is a static archive whose hegel_* symbols are resolved by libhegel

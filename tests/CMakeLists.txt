@@ -9,6 +9,21 @@ set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(googletest)
 include(GoogleTest)
 
+# Snapshot ("approval") testing for full-output assertions. ApprovalTests
+# is fetched at configure time, so sandboxed builds without network access
+# (e.g. nix) set HEGEL_APPROVAL_TESTS=OFF; the test suites that contain
+# approval tests are skipped there.
+option(HEGEL_APPROVAL_TESTS
+    "Build the test suites that use ApprovalTests snapshots" ON)
+if(HEGEL_APPROVAL_TESTS)
+    FetchContent_Declare(
+        ApprovalTests
+        GIT_REPOSITORY https://github.com/approvals/ApprovalTests.cpp.git
+        GIT_TAG v.10.13.0
+    )
+    FetchContent_MakeAvailable(ApprovalTests)
+endif()
+
 # Interface target shared by all tests that use common/utils.h.
 # Provides include path and links gtest for the FAIL() macro.
 add_library(hegel_tests_common INTERFACE)
@@ -23,7 +38,7 @@ target_link_libraries(hegel_tests_common
 )
 
 # -----------------------------------------------------------------------------
-# hegel_add_test(NAME <name> SOURCE <path> [USE_UTILS] [INTERNAL])
+# hegel_add_test(NAME <name> SOURCE <path> [USE_UTILS] [INTERNAL] [APPROVALS])
 #
 #   Registers a GTest-based test executable and gtest_discover_tests target.
 #
@@ -33,21 +48,36 @@ target_link_libraries(hegel_tests_common
 #                  the include path). If not set, link against hegel directly.
 #   INTERNAL     - if set, also add src/ to the include path (for unit
 #                  tests against private headers).
+#   APPROVALS    - if set, the test contains approval (snapshot) tests: the
+#                  executable uses common/approval_main.cpp as its main and
+#                  links ApprovalTests instead of gtest_main.
 # -----------------------------------------------------------------------------
 function(hegel_add_test)
     cmake_parse_arguments(HAT
-        "USE_UTILS;INTERNAL"
+        "USE_UTILS;INTERNAL;APPROVALS"
         "NAME;SOURCE"
         ""
         ${ARGN})
 
-    add_executable(${HAT_NAME} ${HAT_SOURCE})
+    if(HAT_APPROVALS AND NOT HEGEL_APPROVAL_TESTS)
+        return()
+    endif()
+
+    set(HAT_SOURCES ${HAT_SOURCE})
+    if(HAT_APPROVALS)
+        list(APPEND HAT_SOURCES common/approval_main.cpp)
+        set(HAT_MAIN_LIBS ApprovalTests::ApprovalTests)
+    else()
+        set(HAT_MAIN_LIBS GTest::gtest_main)
+    endif()
+
+    add_executable(${HAT_NAME} ${HAT_SOURCES})
     if(HAT_USE_UTILS)
         target_link_libraries(${HAT_NAME}
-            PRIVATE hegel_tests_common GTest::gtest_main)
+            PRIVATE hegel_tests_common ${HAT_MAIN_LIBS})
     else()
         target_link_libraries(${HAT_NAME}
-            PRIVATE hegel GTest::gtest_main)
+            PRIVATE hegel GTest::gtest ${HAT_MAIN_LIBS})
     endif()
 
     if(HAT_INTERNAL)
@@ -97,6 +127,9 @@ hegel_add_test(NAME test_stateful
 
 # Guiding generation: reject(), target(), repeat().
 hegel_add_test(NAME test_guiding SOURCE test_guiding.cpp)
+
+# Test-case cloning: clone(), spawn()/join(), and clone output approval.
+hegel_add_test(NAME test_clone SOURCE test_clone.cpp USE_UTILS APPROVALS)
 
 # default_generator is only available with reflection (C++20).
 if(HEGEL_REFLECTION)

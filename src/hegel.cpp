@@ -24,6 +24,7 @@
 #include <exception>
 #include <functional>
 #include <map>
+#include <memory>
 #include <stdexcept>
 #include <string>
 #include <typeinfo>
@@ -52,13 +53,6 @@ namespace hegel {
             hegel_context_t* ctx;
             hegel_run_t* run = nullptr;
             ~RunGuard() { hegel_run_free(ctx, run); }
-        };
-
-        // Every test-case handle is caller-owned, whatever produced it.
-        struct TestCaseGuard {
-            hegel_context_t* ctx;
-            hegel_test_case_t* tc = nullptr;
-            ~TestCaseGuard() { hegel_test_case_free(ctx, tc); }
         };
 
         // Caller-owned snapshot of a finished run's result.
@@ -145,10 +139,9 @@ namespace hegel {
                                    const char* blob, Verbosity verbosity,
                                    int64_t stateful_step_count, Mode mode,
                                    const std::function<void(TestCase&)>& fn) {
-            TestCaseGuard tc_guard{ctx};
-            tc_guard.tc = impl::test_case_from_blob(ctx, s, blob);
+            hegel_test_case_t* handle = impl::test_case_from_blob(ctx, s, blob);
             // GCOVR_EXCL_START
-            if (tc_guard.tc == nullptr) {
+            if (handle == nullptr) {
                 // should be handled by check_rc, possible bug in Hegel if hit
                 throw std::runtime_error(
                     "Unreachable: failure blob produced a null test case.");
@@ -156,12 +149,12 @@ namespace hegel {
             // GCOVR_EXCL_STOP
             // Positional init (fields: tc, is_final, verbosity) so this
             // TU stays clean under a C++17 (HEGEL_REFLECTION=OFF) build.
-            impl::test_case::TestCaseData data{tc_guard.tc,
-                                               /*is_final=*/true, verbosity,
-                                               stateful_step_count, mode};
-            TestCase tc_obj(&data);
+            TestCase tc_obj(std::unique_ptr<impl::test_case::TestCaseData>(
+                new impl::test_case::TestCaseData{handle, /*is_final=*/true,
+                                                  verbosity,
+                                                  stateful_step_count, mode}));
             BodyOutcome outcome = run_body(fn, tc_obj);
-            mark_complete(ctx, tc_guard.tc, outcome);
+            mark_complete(ctx, tc_obj.data()->tc, outcome);
             return outcome;
         }
 
@@ -338,18 +331,16 @@ namespace hegel {
             // Generation loop: pull cases until the engine reports completion
             // (NULL test case), running, marking, and releasing each.
             while (true) {
-                TestCaseGuard tc_guard{ctx};
-                tc_guard.tc = impl::next_test_case(ctx, run);
-                if (tc_guard.tc == nullptr) {
+                hegel_test_case_t* handle = impl::next_test_case(ctx, run);
+                if (handle == nullptr) {
                     break;
                 }
-                impl::test_case::TestCaseData data{
-                    tc_guard.tc,
-                    /*is_final=*/false, settings.verbosity,
-                    settings.stateful_step_count, settings.mode};
-                TestCase tc_obj(&data);
+                TestCase tc_obj(std::unique_ptr<impl::test_case::TestCaseData>(
+                    new impl::test_case::TestCaseData{
+                        handle, /*is_final=*/false, settings.verbosity,
+                        settings.stateful_step_count, settings.mode}));
                 BodyOutcome outcome = run_body(test_fn, tc_obj);
-                mark_complete(ctx, tc_guard.tc, outcome);
+                mark_complete(ctx, tc_obj.data()->tc, outcome);
             }
 
             ResultGuard result_guard{ctx};
