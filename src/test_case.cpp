@@ -4,6 +4,8 @@
 #include <engine.h>
 #include <test_case.h>
 
+#include <hegel.h>
+
 #include <cstdint>
 #include <functional>
 #include <iostream>

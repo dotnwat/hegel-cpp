@@ -23,7 +23,9 @@ check-sanitizer SANITIZERS:
     cmake --build "$dir" -j{{ jobs }}
     # LeakSanitizer is on by default under ASan on Linux and unsupported on
     # macOS, so detect_leaks is left at its platform default rather than forced.
+    # LSAN suppressions cover known reference-cycle leaks in recursive generators.
     ASAN_OPTIONS=halt_on_error=1 \
+    LSAN_OPTIONS="suppressions=$PWD/tests/lsan-suppressions.txt" \
     UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1 \
     TSAN_OPTIONS=halt_on_error=1 \
         ctest --test-dir "$dir/tests" --output-on-failure -j{{ jobs }}
