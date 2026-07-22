@@ -41,7 +41,12 @@ namespace hegel {
       public:
         TestCase(const TestCase&) = delete;
         TestCase& operator=(const TestCase&) = delete;
+        /// Move-constructs, transferring ownership of the underlying handle.
         TestCase(TestCase&&) noexcept;
+        /**
+         * @brief Move-assigns, transferring ownership of the underlying handle.
+         * @return Reference to this test case.
+         */
         TestCase& operator=(TestCase&&) noexcept;
         ~TestCase();
 
@@ -191,8 +196,11 @@ namespace hegel {
      */
     template <typename T> class Worker {
       public:
+        /// @cond INTERNAL
         Worker(std::thread thread, std::future<T> future)
             : thread_(std::move(thread)), future_(std::move(future)) {}
+        /// @endcond
+        /// Move-constructs, transferring ownership of the running worker.
         Worker(Worker&&) noexcept = default;
         Worker(const Worker&) = delete;
         Worker& operator=(const Worker&) = delete;
@@ -207,6 +215,8 @@ namespace hegel {
          *
          * Re-raises any exception thrown on the worker thread. Call at most
          * once, before the test body returns.
+         *
+         * @return The value returned by the spawned callable.
          */
         T join() {
             if (thread_.joinable()) {
