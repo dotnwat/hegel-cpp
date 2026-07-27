@@ -70,9 +70,10 @@ TEST(Require, SatisfiedRequirementRunsOn) {
     EXPECT_TRUE(reached);
 }
 
-// Two requirements on different source lines are two distinct bugs. The
-// origin comes from the macro's call site: an origin taken from the throw
-// site inside the library would report both as the same failure.
+// Two requirements on different source lines are two distinct bugs, so the
+// report holds two numbered sections. The origin comes from the macro's call
+// site: an origin taken from the throw site inside the library would report
+// both as the same failure.
 TEST(Require, DistinctCallSitesAreDistinctFailures) {
     std::string out = capture(
         [](hegel::TestCase& tc) {
@@ -83,14 +84,11 @@ TEST(Require, DistinctCallSitesAreDistinctFailures) {
             HEGEL_REQUIRE(tc, x > 30, "too small");
         },
         hegel::Settings{.test_cases = 300, .report_multiple_failures = true});
-    EXPECT_NE(out.find("Failure 1 of 2:"), std::string::npos) << out;
-    EXPECT_NE(out.find("Failure 2 of 2:"), std::string::npos) << out;
-    EXPECT_NE(out.find("too big"), std::string::npos) << out;
-    EXPECT_NE(out.find("too small"), std::string::npos) << out;
+    Approvals::verify(out, scrub_blob());
 }
 
 // One requirement failing on many different values is one bug, so the report
-// stays a single section.
+// stays a single unnumbered section.
 TEST(Require, OneCallSiteIsOneFailure) {
     std::string out = capture(
         [](hegel::TestCase& tc) {
@@ -100,7 +98,7 @@ TEST(Require, OneCallSiteIsOneFailure) {
             HEGEL_REQUIRE(tc, x < 60, "too big");
         },
         hegel::Settings{.test_cases = 300, .report_multiple_failures = true});
-    EXPECT_EQ(out.find("Failure 1 of"), std::string::npos) << out;
+    Approvals::verify(out, scrub_blob());
 }
 
 // Values with no inner structure diff as a whole.
@@ -152,20 +150,15 @@ TEST(RequireEqual, EqualValuesRunOn) {
     EXPECT_TRUE(reached);
 }
 
-// The diff only feeds the failure report, so it is rendered on the final
-// replay alone and not on each of the cases that led there.
+// The diff only feeds the failure report, so the report shows it once, for
+// the final replay, and not for each of the cases that led there.
 TEST(RequireEqual, DiffIsRenderedOnceForTheReport) {
     std::string out = capture([](hegel::TestCase& tc) {
         HEGEL_DRAW(tc, x,
                    gs::integers<int32_t>({.min_value = 0, .max_value = 100}));
         HEGEL_REQUIRE_EQUAL(tc, x, 101);
     });
-    size_t count = 0;
-    for (size_t at = out.find("(- lhs / + rhs)"); at != std::string::npos;
-         at = out.find("(- lhs / + rhs)", at + 1)) {
-        count++;
-    }
-    EXPECT_EQ(count, 1u) << out;
+    Approvals::verify(out, scrub_blob());
 }
 
 // Quiet suppresses the report, so no diff reaches stderr at all.
@@ -173,5 +166,5 @@ TEST(RequireEqual, QuietRendersNoDiff) {
     std::string out = capture(
         [](hegel::TestCase& tc) { HEGEL_REQUIRE_EQUAL(tc, 3, 4); },
         hegel::Settings{.verbosity = hegel::Verbosity::Quiet});
-    EXPECT_EQ(out.find("(- lhs / + rhs)"), std::string::npos) << out;
+    Approvals::verify(out);
 }

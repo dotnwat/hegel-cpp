@@ -151,6 +151,41 @@ namespace {
             })};
         }
     };
+
+    // Overflows at 12, so a failing sequence is short enough to read whole.
+    struct Counter : hegel::stateful::StateMachine<Counter> {
+        int total = 0;
+        std::vector<hegel::stateful::Rule<Counter>> rules() {
+            return {hegel::stateful::Rule<Counter>(
+                "add", [](hegel::TestCase& tc, Counter& m) {
+                    m.total += tc.draw("amount",
+                                       gs::integers<int>({.min_value = 1,
+                                                          .max_value = 9}));
+                    if (m.total >= 12) {
+                        throw std::runtime_error("counter overflowed");
+                    }
+                })};
+        }
+    };
+
+    std::string
+    capture_counter_failure(hegel::stateful::RunParams params = {}) {
+        testing::internal::CaptureStderr();
+        try {
+            hegel::test(
+                [params](hegel::TestCase& tc) {
+                    Counter machine;
+                    hegel::stateful::run(machine, tc, params);
+                },
+                hegel::Settings{.seed = 1,
+                                .derandomize = false,
+                                .database = hegel::Database::disabled(),
+                                .stateful_step_count = 5});
+        } catch (const std::exception&) { // NOLINT(bugprone-empty-catch)
+            // The report is what this asserts on; the re-raise is not.
+        }
+        return testing::internal::GetCapturedStderr();
+    }
 } // namespace
 
 TEST(Stateful, BasicRun) {
@@ -209,6 +244,18 @@ TEST(Stateful, TraceNestsDrawsAndHidesStopDecision) {
                         .stateful_step_count = 3});
     std::string out = testing::internal::GetCapturedStderr();
     Approvals::verify(out);
+}
+
+// The state prints before the first step and after every step that runs to
+// completion, so a failing sequence shows what led to the failure. A step
+// that throws prints no state, leaving the last state before the exception
+// as the one the failing step started from.
+TEST(Stateful, StateTraceIsOnByDefault) {
+    Approvals::verify(capture_counter_failure());
+}
+
+TEST(Stateful, StateTraceCanBeDisabled) {
+    Approvals::verify(capture_counter_failure({.trace_state = false}));
 }
 
 TEST(Stateful, CounterexamplePrintsRuleDraws) {
