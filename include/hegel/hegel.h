@@ -283,6 +283,23 @@
 namespace hegel {
 
     /**
+     * @brief Where a test is defined.
+     *
+     * A failure report names the test and its source line in its header:
+     * `--- Failure: my_property (tests/example.cpp:42) ---`. @ref HEGEL_TEST
+     * fills this in from the test's name and position. A caller of
+     * hegel::test() supplies it to get the same header.
+     */
+    struct TestLocation {
+        /// Test name, as it appears in the report header.
+        std::string name;
+        /// Source file the test is defined in.
+        std::string file;
+        /// Line the test is defined on.
+        int line = 0;
+    };
+
+    /**
      * @brief Run a Hegel test.
      *
      * This is the underlying entry point that @ref HEGEL_TEST (the
@@ -326,6 +343,29 @@ namespace hegel {
               const std::vector<std::string>& failure_blobs = {});
 
     /**
+     * @brief Run a Hegel test that names itself in its failure report.
+     *
+     * Behaves like the overload above. The failure report's header names
+     * @p location's test and source line instead of reading `--- Failure ---`.
+     *
+     * @code{.cpp}
+     * hegel::test(my_body, {"my_property", __FILE__, __LINE__},
+     *             {.test_cases = 500});
+     * @endcode
+     *
+     * @param test_fn The test function to run repeatedly.
+     * @param location Where the test is defined.
+     * @param settings Configuration settings (test count, debug mode, etc.)
+     * @param failure_blobs The base64 blobs encoding the engine choices that
+     led to failures. Multiple blobs can be passed in for bookkeeping, but only
+     the first one is run.
+     * @throws std::runtime_error if any test case fails
+     */
+    void test(const std::function<void(TestCase&)>& test_fn,
+              const TestLocation& location, const Settings& settings = {},
+              const std::vector<std::string>& failure_blobs = {});
+
+    /**
      * @brief Run every test defined with @ref HEGEL_TEST in this binary.
      *
      * Each test runs with its inline settings.
@@ -352,6 +392,12 @@ namespace hegel {
         bool register_blob(const char* name, std::vector<const char*> blobs);
         // look up the failure blobs associated with a test
         std::vector<std::string> reproduce_blobs_for(const char* name);
+
+        // What HEGEL_TEST expands to.
+        void test_from_macro(const std::function<void(TestCase&)>& test_fn,
+                             const TestLocation& location,
+                             const Settings& settings,
+                             const std::vector<std::string>& failure_blobs);
     } // namespace internal
     /// @endcond
 } // namespace hegel
@@ -402,8 +448,9 @@ namespace hegel {
         if (!settings.database_key.has_value()) {                              \
             settings.database_key = __FILE__ "::" #name;                       \
         }                                                                      \
-        ::hegel::test(                                                         \
-            hegel_test_body_##name, settings,                                  \
+        ::hegel::internal::test_from_macro(                                    \
+            hegel_test_body_##name,                                            \
+            ::hegel::TestLocation{#name, __FILE__, __LINE__}, settings,        \
             ::hegel::internal::reproduce_blobs_for(__FILE__ "::" #name));      \
     }                                                                          \
     [[maybe_unused]] static const bool hegel_test_registered_##name =          \

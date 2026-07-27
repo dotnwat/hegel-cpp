@@ -39,7 +39,8 @@ namespace hegel {
         auto cloned = std::unique_ptr<impl::test_case::TestCaseData>(
             new impl::test_case::TestCaseData{
                 handle, data_->is_final, data_->verbosity,
-                data_->stateful_step_count, data_->mode, data_->note_indent});
+                data_->stateful_step_count, data_->mode, data_->note_indent,
+                data_->in_report, data_->printed_output});
         return TestCase(std::move(cloned));
     }
 
@@ -74,8 +75,25 @@ namespace hegel {
     }
 
     void TestCase::note(std::string_view message) const {
-        if (data_->should_log()) {
-            std::cerr << data_->indent_prefix() << message << std::endl;
+        if (!data_->should_log()) {
+            return;
+        }
+        // A blank line opens the framed report's body.
+        if (data_->in_report && !*data_->printed_output) {
+            std::cerr << "\n";
+        }
+        *data_->printed_output = true;
+        // Every line of a multi-line message keeps the body's indent.
+        std::string indent = data_->indent_prefix();
+        std::string_view rest = message;
+        while (true) {
+            size_t end = rest.find('\n');
+            if (end == std::string_view::npos) {
+                std::cerr << indent << rest << std::endl;
+                return;
+            }
+            std::cerr << indent << rest.substr(0, end) << "\n";
+            rest.remove_prefix(end + 1);
         }
     }
 

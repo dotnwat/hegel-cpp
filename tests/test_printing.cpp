@@ -59,8 +59,7 @@ namespace {
     ApprovalTests::Options scrub_blob() {
         return ApprovalTests::Options(
             ApprovalTests::Scrubbers::createRegexScrubber(
-                std::regex(R"RX((rerun with: .*)"[A-Za-z0-9+/=]*")RX"),
-                R"RX($1"[blob]")RX"));
+                std::regex(R"("[A-Za-z0-9+/=]{8,}")"), R"("[blob]")"));
     }
 
     // A fixed seed keeps the shrunk replay, and with it the whole report,
@@ -155,256 +154,262 @@ TEST(FailureReport, MacroDefinedTestGetsAnnotationRerunHint) {
                                          report_settings(), {});
     });
     Approvals::verify(out, scrub_blob());
-}
 
-// Rejected cases count as discarded, apart from the cases that ran.
-TEST(FailureReport, DiscardedCasesAreCounted) {
-    int calls = 0;
-    std::string out = capture_failure_report([&calls](hegel::TestCase& tc) {
-        if (++calls <= 3) {
-            tc.reject();
-        }
-        throw std::runtime_error("boom");
-    });
-    Approvals::verify(out, scrub_blob());
-}
-
-// A note that spans several lines keeps every line inside the body's indent.
-TEST(FailureReport, MultiLineNoteIsIndented) {
-    std::string out = capture_failure_report([](hegel::TestCase& tc) {
-        tc.note("first line\nsecond line");
-        throw std::runtime_error("boom");
-    });
-    Approvals::verify(out, scrub_blob());
-}
-
-namespace {
-    // Two distinct bugs (different exception types, so different origins):
-    // even x >= 10 shrinks to 10, odd x >= 10 shrinks to 11.
-    void two_bugs(hegel::TestCase& tc) {
-        int32_t x = tc.draw(gs::integers<int32_t>());
-        if (x >= 10 && x % 2 == 0) {
-            throw std::runtime_error("even bug with x=" + std::to_string(x));
-        }
-        if (x >= 10 && x % 2 != 0) {
-            throw std::logic_error("odd bug with x=" + std::to_string(x));
-        }
-    }
-} // namespace
-
-TEST(FailureReport, MultipleFailuresReported) {
-    std::string out = capture_failure_report(
-        two_bugs, hegel::Settings{.report_multiple_failures = true});
-    Approvals::verify(out, scrub_blob());
-}
-
-// With report_multiple_failures off, the run stops at the first failing
-// example and the report holds a single failure.
-TEST(FailureReport, MultipleFailuresOffReportsOne) {
-    std::string out = capture_failure_report(
-        two_bugs, hegel::Settings{.report_multiple_failures = false});
-    Approvals::verify(out, scrub_blob());
-}
-
-// print_blob = false drops the rerun hint. The rest of the report stays.
-TEST(FailureReport, PrintBlobOffDropsRerunHint) {
-    std::string out = capture_failure_report(
-        [](hegel::TestCase&) { throw std::runtime_error("silly error"); },
-        hegel::Settings{.print_blob = false});
-    Approvals::verify(out);
-}
-
-// ---------------------------------------------------------------------------
-// Per-verbosity diagnostics, captured in-process
-// ---------------------------------------------------------------------------
-
-namespace {
-    constexpr const char* kNote = "SENTINEL_NOTE";
-
-    hegel::Settings with_verbosity(hegel::Verbosity v) {
-        return hegel::Settings{.test_cases = 5,
-                               .verbosity = v,
-                               .database = hegel::Database::disabled()};
+    TEST(FailureReport, DiscardedCasesAreCounted) {
+        int calls = 0;
+        std::string out = capture_failure_report([&calls](hegel::TestCase& tc) {
+            (void)tc.draw(gs::integers<int32_t>());
+            if (++calls <= 3) {
+                tc.reject();
+            }
+            throw std::runtime_error("boom");
+        });
+        Approvals::verify(out, scrub_blob());
     }
 
-    std::string run_capturing_stderr(const hegel::Settings& settings) {
-        testing::internal::CaptureStderr();
-        hegel::test(
+    // A note that spans several lines keeps every line inside the body's
+    // indent.
+    TEST(FailureReport, MultiLineNoteIsIndented) {
+        std::string out = capture_failure_report([](hegel::TestCase& tc) {
+            tc.note("first line\nsecond line");
+            throw std::runtime_error("boom");
+        });
+        Approvals::verify(out, scrub_blob());
+    }
+
+    namespace {
+        // Two distinct bugs (different exception types, so different origins):
+        // even x >= 10 shrinks to 10, odd x >= 10 shrinks to 11.
+        void two_bugs(hegel::TestCase& tc) {
+            int32_t x = tc.draw(gs::integers<int32_t>());
+            if (x >= 10 && x % 2 == 0) {
+                throw std::runtime_error("even bug with x=" +
+                                         std::to_string(x));
+            }
+            if (x >= 10 && x % 2 != 0) {
+                throw std::logic_error("odd bug with x=" + std::to_string(x));
+            }
+        }
+    } // namespace
+
+    TEST(FailureReport, MultipleFailuresReported) {
+        std::string out = capture_failure_report(
+            two_bugs, hegel::Settings{.report_multiple_failures = true});
+        Approvals::verify(out, scrub_blob());
+    }
+
+    // With report_multiple_failures off, the run stops at the first failing
+    // example and the report holds a single failure.
+    TEST(FailureReport, MultipleFailuresOffReportsOne) {
+        std::string out = capture_failure_report(
+            two_bugs, hegel::Settings{.report_multiple_failures = false});
+        Approvals::verify(out, scrub_blob());
+    }
+
+    // print_blob = false drops the rerun hint. The rest of the report stays.
+    TEST(FailureReport, PrintBlobOffDropsRerunHint) {
+        std::string out = capture_failure_report(
+            [](hegel::TestCase&) { throw std::runtime_error("silly error"); },
+            hegel::Settings{.print_blob = false});
+        Approvals::verify(out);
+    }
+
+    // ---------------------------------------------------------------------------
+    // Per-verbosity diagnostics, captured in-process
+    // ---------------------------------------------------------------------------
+
+    namespace {
+        constexpr const char* kNote = "SENTINEL_NOTE";
+
+        hegel::Settings with_verbosity(hegel::Verbosity v) {
+            return hegel::Settings{.test_cases = 5,
+                                   .verbosity = v,
+                                   .database = hegel::Database::disabled()};
+        }
+
+        std::string run_capturing_stderr(const hegel::Settings& settings) {
+            testing::internal::CaptureStderr();
+            hegel::test(
+                [](hegel::TestCase& tc) {
+                    tc.note(kNote);
+                    (void)tc.draw(gs::integers<int>());
+                },
+                settings);
+            return testing::internal::GetCapturedStderr();
+        }
+
+        bool contains(const std::string& haystack, const char* needle) {
+            return haystack.find(needle) != std::string::npos;
+        }
+    } // namespace
+
+    TEST(Diagnostics, QuietSuppressesEverything) {
+        std::string out =
+            run_capturing_stderr(with_verbosity(hegel::Verbosity::Quiet));
+        Approvals::verify(out);
+    }
+
+    TEST(Diagnostics, NormalSuppressesNotesWhilePassing) {
+        std::string out =
+            run_capturing_stderr(with_verbosity(hegel::Verbosity::Normal));
+        Approvals::verify(out);
+    }
+
+    // Verbose prints notes and drawn values on every case.
+    TEST(Diagnostics, VerbosePrintsNotesAndValues) {
+        hegel::Settings settings = with_verbosity(hegel::Verbosity::Verbose);
+        settings.seed = 1;
+        settings.derandomize = false;
+        std::string out = run_capturing_stderr(settings);
+        Approvals::verify(out);
+    }
+
+    // Debug prints everything Verbose does (engine-side shrinker tracing is the
+    // engine's own output and not asserted on here).
+    TEST(Diagnostics, DebugPrintsNotesAndValues) {
+        std::string out =
+            run_capturing_stderr(with_verbosity(hegel::Verbosity::Debug));
+        EXPECT_TRUE(contains(out, kNote));
+        EXPECT_TRUE(contains(out, "auto draw_1 = "));
+    }
+
+    // A throw that isn't a std::exception exercises the catch(...) fallback,
+    // which records the exception's type name as the failure origin; the
+    // single-failure re-raise then surfaces the original exception, not a
+    // wrapper.
+    TEST(Diagnostics, NonStandardExceptionOrigin) {
+        EXPECT_THROW(hegel::test([](hegel::TestCase&) { throw 42; },
+                                 with_verbosity(hegel::Verbosity::Quiet)),
+                     int);
+    }
+
+    TEST(Diagnostics, InternalExceptionMessages) {
+        EXPECT_STREQ(hegel::internal::HegelReject().what(),
+                     "test case rejected");
+        EXPECT_STREQ(hegel::internal::HegelStopTest().what(),
+                     "test case stopped by backend");
+    }
+
+    // ---------------------------------------------------------------------------
+    // Draw naming: bare names, 1-based suffixes for repeatable draws, one line
+    // per user-level draw. Deterministic outputs are snapshotted whole with
+    // ApprovalTests (tests/approvals/*.approved.txt).
+    // ---------------------------------------------------------------------------
+
+    namespace {
+        // Runs one Verbose test case in-process and returns its stderr.
+        std::string
+        run_verbose(const std::function<void(hegel::TestCase&)>& body,
+                    int64_t test_cases = 1) {
+            testing::internal::CaptureStderr();
+            hegel::test(
+                body, hegel::Settings{.test_cases = test_cases,
+                                      .verbosity = hegel::Verbosity::Verbose,
+                                      .database = hegel::Database::disabled()});
+            return testing::internal::GetCapturedStderr();
+        }
+    } // namespace
+
+    // A user-supplied name drawn once prints bare, with no suffix.
+    TEST(DrawNames, NamedDrawPrintsBareName) {
+        std::string out = run_verbose(
+            [](hegel::TestCase& tc) { (void)tc.draw("count", gs::just(5)); });
+        Approvals::verify(out);
+    }
+
+    // Unnamed draws use the base name "draw" with 1-based suffixes, in draw
+    // order.
+    TEST(DrawNames, UnnamedDrawsAreNumbered) {
+        std::string out = run_verbose([](hegel::TestCase& tc) {
+            (void)tc.draw(gs::just(1));
+            (void)tc.draw(gs::just(2));
+        });
+        Approvals::verify(out);
+    }
+
+    // A repeatable name is suffixed even for a single use.
+    TEST(DrawNames, RepeatableSingleUseIsSuffixed) {
+        std::string out = run_verbose([](hegel::TestCase& tc) {
+            (void)tc.draw("x", gs::just(3), /*repeatable=*/true);
+        });
+        Approvals::verify(out);
+    }
+
+    TEST(DrawNames, RepeatableDrawsNumberInOrder) {
+        std::string out = run_verbose([](hegel::TestCase& tc) {
+            for (int i = 1; i <= 3; ++i) {
+                (void)tc.draw("x", gs::just(i), /*repeatable=*/true);
+            }
+        });
+        Approvals::verify(out);
+    }
+
+    // Suffix allocation skips display names an earlier draw already took.
+    TEST(DrawNames, SuffixAllocationSkipsTakenNames) {
+        std::string out = run_verbose([](hegel::TestCase& tc) {
+            (void)tc.draw("x_1", gs::just(0));
+            (void)tc.draw("x", gs::just(1), /*repeatable=*/true);
+            (void)tc.draw("x", gs::just(2), /*repeatable=*/true);
+        });
+        Approvals::verify(out);
+    }
+
+    TEST(DrawNames, BareNameReusePrintsBare) {
+        std::string out = run_verbose([](hegel::TestCase& tc) {
+            (void)tc.draw("x", gs::just(1));
+            (void)tc.draw("x", gs::just(2));
+        });
+        Approvals::verify(out);
+    }
+
+    TEST(DrawNames, MixedRepeatableAndBareUses) {
+        std::string out = run_verbose([](hegel::TestCase& tc) {
+            (void)tc.draw("x", gs::just(1), /*repeatable=*/true);
+            (void)tc.draw("x", gs::just(2));
+        });
+        Approvals::verify(out);
+    }
+
+    // HEGEL_DRAW declares the variable and prints under its name.
+    TEST(DrawNames, MacroBindsAndPrints) {
+        int seen = 0;
+        std::string out = run_verbose([&seen](hegel::TestCase& tc) {
+            HEGEL_DRAW(tc, width, gs::just(7));
+            seen = width;
+        });
+        EXPECT_EQ(seen, 7);
+        Approvals::verify(out);
+    }
+
+    // A collection draw prints one composed line, not one line per element.
+    TEST(DrawNames, CollectionDrawPrintsOneComposedLine) {
+        std::string out = run_verbose([](hegel::TestCase& tc) {
+            (void)tc.draw(
+                gs::vectors(gs::just(5), {.min_size = 2, .max_size = 2}));
+        });
+        Approvals::verify(out);
+    }
+
+    // Draws inside a compose body are internal to the composed generator; only
+    // the outermost draw prints, with the final composed value.
+    TEST(DrawNames, ComposeInnerDrawsAreSilent) {
+        auto gen = gs::compose([](const hegel::TestCase& tc) {
+            int a = tc.draw(gs::just(1));
+            int b = tc.draw(gs::just(2));
+            return a + b;
+        });
+        std::string out =
+            run_verbose([&gen](hegel::TestCase& tc) { (void)tc.draw(gen); });
+        Approvals::verify(out);
+    }
+
+    TEST(DrawNames, CountersResetPerCase) {
+        std::string out = run_verbose(
             [](hegel::TestCase& tc) {
-                tc.note(kNote);
-                (void)tc.draw(gs::integers<int>());
+                (void)tc.draw("x",
+                              gs::integers<int>().map([](int) { return 3; }),
+                              /*repeatable=*/true);
             },
-            settings);
-        return testing::internal::GetCapturedStderr();
+            /*test_cases=*/3);
+        Approvals::verify(out);
     }
-
-    bool contains(const std::string& haystack, const char* needle) {
-        return haystack.find(needle) != std::string::npos;
-    }
-} // namespace
-
-TEST(Diagnostics, QuietSuppressesEverything) {
-    std::string out =
-        run_capturing_stderr(with_verbosity(hegel::Verbosity::Quiet));
-    Approvals::verify(out);
-}
-
-TEST(Diagnostics, NormalSuppressesNotesWhilePassing) {
-    std::string out =
-        run_capturing_stderr(with_verbosity(hegel::Verbosity::Normal));
-    Approvals::verify(out);
-}
-
-// Verbose prints notes and drawn values on every case.
-TEST(Diagnostics, VerbosePrintsNotesAndValues) {
-    hegel::Settings settings = with_verbosity(hegel::Verbosity::Verbose);
-    settings.seed = 1;
-    settings.derandomize = false;
-    std::string out = run_capturing_stderr(settings);
-    Approvals::verify(out);
-}
-
-// Debug prints everything Verbose does (engine-side shrinker tracing is the
-// engine's own output and not asserted on here).
-TEST(Diagnostics, DebugPrintsNotesAndValues) {
-    std::string out =
-        run_capturing_stderr(with_verbosity(hegel::Verbosity::Debug));
-    EXPECT_TRUE(contains(out, kNote));
-    EXPECT_TRUE(contains(out, "auto draw_1 = "));
-}
-
-// A throw that isn't a std::exception exercises the catch(...) fallback, which
-// records the exception's type name as the failure origin; the single-failure
-// re-raise then surfaces the original exception, not a wrapper.
-TEST(Diagnostics, NonStandardExceptionOrigin) {
-    EXPECT_THROW(hegel::test([](hegel::TestCase&) { throw 42; },
-                             with_verbosity(hegel::Verbosity::Quiet)),
-                 int);
-}
-
-TEST(Diagnostics, InternalExceptionMessages) {
-    EXPECT_STREQ(hegel::internal::HegelReject().what(), "test case rejected");
-    EXPECT_STREQ(hegel::internal::HegelStopTest().what(),
-                 "test case stopped by backend");
-}
-
-// ---------------------------------------------------------------------------
-// Draw naming: bare names, 1-based suffixes for repeatable draws, one line
-// per user-level draw. Deterministic outputs are snapshotted whole with
-// ApprovalTests (tests/approvals/*.approved.txt).
-// ---------------------------------------------------------------------------
-
-namespace {
-    // Runs one Verbose test case in-process and returns its stderr.
-    std::string run_verbose(const std::function<void(hegel::TestCase&)>& body,
-                            int64_t test_cases = 1) {
-        testing::internal::CaptureStderr();
-        hegel::test(body,
-                    hegel::Settings{.test_cases = test_cases,
-                                    .verbosity = hegel::Verbosity::Verbose,
-                                    .database = hegel::Database::disabled()});
-        return testing::internal::GetCapturedStderr();
-    }
-} // namespace
-
-// A user-supplied name drawn once prints bare, with no suffix.
-TEST(DrawNames, NamedDrawPrintsBareName) {
-    std::string out = run_verbose(
-        [](hegel::TestCase& tc) { (void)tc.draw("count", gs::just(5)); });
-    Approvals::verify(out);
-}
-
-// Unnamed draws use the base name "draw" with 1-based suffixes, in draw
-// order.
-TEST(DrawNames, UnnamedDrawsAreNumbered) {
-    std::string out = run_verbose([](hegel::TestCase& tc) {
-        (void)tc.draw(gs::just(1));
-        (void)tc.draw(gs::just(2));
-    });
-    Approvals::verify(out);
-}
-
-// A repeatable name is suffixed even for a single use.
-TEST(DrawNames, RepeatableSingleUseIsSuffixed) {
-    std::string out = run_verbose([](hegel::TestCase& tc) {
-        (void)tc.draw("x", gs::just(3), /*repeatable=*/true);
-    });
-    Approvals::verify(out);
-}
-
-TEST(DrawNames, RepeatableDrawsNumberInOrder) {
-    std::string out = run_verbose([](hegel::TestCase& tc) {
-        for (int i = 1; i <= 3; ++i) {
-            (void)tc.draw("x", gs::just(i), /*repeatable=*/true);
-        }
-    });
-    Approvals::verify(out);
-}
-
-// Suffix allocation skips display names an earlier draw already took.
-TEST(DrawNames, SuffixAllocationSkipsTakenNames) {
-    std::string out = run_verbose([](hegel::TestCase& tc) {
-        (void)tc.draw("x_1", gs::just(0));
-        (void)tc.draw("x", gs::just(1), /*repeatable=*/true);
-        (void)tc.draw("x", gs::just(2), /*repeatable=*/true);
-    });
-    Approvals::verify(out);
-}
-
-TEST(DrawNames, BareNameReusePrintsBare) {
-    std::string out = run_verbose([](hegel::TestCase& tc) {
-        (void)tc.draw("x", gs::just(1));
-        (void)tc.draw("x", gs::just(2));
-    });
-    Approvals::verify(out);
-}
-
-TEST(DrawNames, MixedRepeatableAndBareUses) {
-    std::string out = run_verbose([](hegel::TestCase& tc) {
-        (void)tc.draw("x", gs::just(1), /*repeatable=*/true);
-        (void)tc.draw("x", gs::just(2));
-    });
-    Approvals::verify(out);
-}
-
-// HEGEL_DRAW declares the variable and prints under its name.
-TEST(DrawNames, MacroBindsAndPrints) {
-    int seen = 0;
-    std::string out = run_verbose([&seen](hegel::TestCase& tc) {
-        HEGEL_DRAW(tc, width, gs::just(7));
-        seen = width;
-    });
-    EXPECT_EQ(seen, 7);
-    Approvals::verify(out);
-}
-
-// A collection draw prints one composed line, not one line per element.
-TEST(DrawNames, CollectionDrawPrintsOneComposedLine) {
-    std::string out = run_verbose([](hegel::TestCase& tc) {
-        (void)tc.draw(gs::vectors(gs::just(5), {.min_size = 2, .max_size = 2}));
-    });
-    Approvals::verify(out);
-}
-
-// Draws inside a compose body are internal to the composed generator; only
-// the outermost draw prints, with the final composed value.
-TEST(DrawNames, ComposeInnerDrawsAreSilent) {
-    auto gen = gs::compose([](const hegel::TestCase& tc) {
-        int a = tc.draw(gs::just(1));
-        int b = tc.draw(gs::just(2));
-        return a + b;
-    });
-    std::string out =
-        run_verbose([&gen](hegel::TestCase& tc) { (void)tc.draw(gen); });
-    Approvals::verify(out);
-}
-
-TEST(DrawNames, CountersResetPerCase) {
-    std::string out = run_verbose(
-        [](hegel::TestCase& tc) {
-            (void)tc.draw("x", gs::integers<int>().map([](int) { return 3; }),
-                          /*repeatable=*/true);
-        },
-        /*test_cases=*/3);
-    Approvals::verify(out);
-}

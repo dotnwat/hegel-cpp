@@ -158,9 +158,9 @@ namespace {
         std::vector<hegel::stateful::Rule<Counter>> rules() {
             return {hegel::stateful::Rule<Counter>(
                 "add", [](hegel::TestCase& tc, Counter& m) {
-                    m.total += tc.draw("amount",
-                                       gs::integers<int>({.min_value = 1,
-                                                          .max_value = 9}));
+                    m.total += tc.draw(
+                        "amount",
+                        gs::integers<int>({.min_value = 1, .max_value = 9}));
                     if (m.total >= 12) {
                         throw std::runtime_error("counter overflowed");
                     }

@@ -22,8 +22,7 @@ namespace {
     ApprovalTests::Options scrub_blob() {
         return ApprovalTests::Options(
             ApprovalTests::Scrubbers::createRegexScrubber(
-                std::regex(R"RX((rerun with: .*)"[A-Za-z0-9+/=]*")RX"),
-                R"RX($1"[blob]")RX"));
+                std::regex(R"("[A-Za-z0-9+/=]{8,}")"), R"("[blob]")"));
     }
 
     // Runs a property with a fixed seed and returns the report it printed,
@@ -77,9 +76,9 @@ TEST(Require, SatisfiedRequirementRunsOn) {
 TEST(Require, DistinctCallSitesAreDistinctFailures) {
     std::string out = capture(
         [](hegel::TestCase& tc) {
-            HEGEL_DRAW(tc, x,
-                       gs::integers<int32_t>({.min_value = 0,
-                                              .max_value = 100}));
+            HEGEL_DRAW(
+                tc, x,
+                gs::integers<int32_t>({.min_value = 0, .max_value = 100}));
             HEGEL_REQUIRE(tc, x < 60, "too big");
             HEGEL_REQUIRE(tc, x > 30, "too small");
         },
@@ -92,9 +91,9 @@ TEST(Require, DistinctCallSitesAreDistinctFailures) {
 TEST(Require, OneCallSiteIsOneFailure) {
     std::string out = capture(
         [](hegel::TestCase& tc) {
-            HEGEL_DRAW(tc, x,
-                       gs::integers<int32_t>({.min_value = 0,
-                                              .max_value = 100}));
+            HEGEL_DRAW(
+                tc, x,
+                gs::integers<int32_t>({.min_value = 0, .max_value = 100}));
             HEGEL_REQUIRE(tc, x < 60, "too big");
         },
         hegel::Settings{.test_cases = 300, .report_multiple_failures = true});
@@ -103,8 +102,8 @@ TEST(Require, OneCallSiteIsOneFailure) {
 
 // Values with no inner structure diff as a whole.
 TEST(RequireEqual, ScalarsDiffAsWholeValues) {
-    std::string out = capture(
-        [](hegel::TestCase& tc) { HEGEL_REQUIRE_EQUAL(tc, 3, 4); });
+    std::string out =
+        capture([](hegel::TestCase& tc) { HEGEL_REQUIRE_EQUAL(tc, 3, 4); });
     Approvals::verify(out, scrub_blob());
 }
 
@@ -163,8 +162,8 @@ TEST(RequireEqual, DiffIsRenderedOnceForTheReport) {
 
 // Quiet suppresses the report, so no diff reaches stderr at all.
 TEST(RequireEqual, QuietRendersNoDiff) {
-    std::string out = capture(
-        [](hegel::TestCase& tc) { HEGEL_REQUIRE_EQUAL(tc, 3, 4); },
-        hegel::Settings{.verbosity = hegel::Verbosity::Quiet});
+    std::string out =
+        capture([](hegel::TestCase& tc) { HEGEL_REQUIRE_EQUAL(tc, 3, 4); },
+                hegel::Settings{.verbosity = hegel::Verbosity::Quiet});
     Approvals::verify(out);
 }
