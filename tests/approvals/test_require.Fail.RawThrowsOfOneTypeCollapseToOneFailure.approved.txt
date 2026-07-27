@@ -1,11 +1,9 @@
 --- Failure ------------------------------------------------------------
 Falsified after 1 test case (0 discarded):
 
-  require_equal: values differ (- lhs / + rhs):
-  - 3
-  + 4
+  auto x = 0;
 
-Exception: require_equal: values differ
+Exception: std::runtime_error: too small
 rerun with: hegel::test(test_fn, settings, {"[blob]"})
---- rethrown: require_equal: values differ
+--- rethrown: too small
 

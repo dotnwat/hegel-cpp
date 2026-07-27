@@ -485,6 +485,106 @@ namespace hegel {
  */
 #define HEGEL_DRAW(tc, var, ...) auto var = (tc).draw(#var, (__VA_ARGS__))
 
+/// @cond INTERNAL
+// Stringification takes two steps because `#` reads its argument before any
+// macro in it expands. `HEGEL_INTERNAL_STRINGIFY_(__LINE__)` alone therefore
+// gives "__LINE__". Passing the argument through a macro that does not apply
+// `#` expands it first, so the second macro stringifies the line number.
+#define HEGEL_INTERNAL_STRINGIFY_(x) #x
+#define HEGEL_INTERNAL_STRINGIFY(x) HEGEL_INTERNAL_STRINGIFY_(x)
+
+// The call site, which the engine uses to tell one requirement from another.
+// The three parts join into one string literal at compile time.
+//
+// `#` applies only to a parameter of a macro that takes parameters, so this
+// macro cannot stringify __LINE__ itself. A bare `#__LINE__` here leaves the
+// `#` in the token stream and fails to compile.
+#define HEGEL_INTERNAL_ORIGIN __FILE__ ":" HEGEL_INTERNAL_STRINGIFY(__LINE__)
+/// @endcond
+
+/**
+ * @brief Fail the current test case with @p message.
+ *
+ * @code{.cpp}
+ * HEGEL_TEST(parser_accepts_its_own_output)(hegel::TestCase& tc) {
+ *     HEGEL_DRAW(tc, doc, document_generator());
+ *     auto reparsed = parse(render(doc));
+ *     if (!reparsed) {
+ *         HEGEL_FAIL(tc, "rendered document did not parse back");
+ *     }
+ * }
+ * @endcode
+ *
+ * The macro does not return, so a branch ending in it needs no value.
+ *
+ * Prefer this over a raw @c throw. Hegel groups counterexamples by origin to
+ * tell one bug from another, and a raw throw carries no source position, so
+ * every @c std::runtime_error in a run shares one origin and reports as a
+ * single bug. Each @c HEGEL_FAIL carries its own position, so failures on
+ * different lines stay distinct under Settings::report_multiple_failures.
+ *
+ * @param tc The current hegel::TestCase.
+ * @param ... The failure message.
+ */
+#define HEGEL_FAIL(tc, ...)                                                    \
+    ::hegel::internal::fail_impl((tc), HEGEL_INTERNAL_ORIGIN, __VA_ARGS__)
+
+/**
+ * @brief Fail the current test case unless @p condition holds.
+ *
+ * @code{.cpp}
+ * HEGEL_TEST(sum_stays_positive)(hegel::TestCase& tc) {
+ *     HEGEL_DRAW(tc, l, gs::vectors(gs::integers<int>({.min_value = 0})));
+ *     HEGEL_REQUIRE(tc, running_sum(l) >= 0, "sum must stay non-negative");
+ * }
+ * @endcode
+ *
+ * The report prints the message in its `Exception:` line. Without one it
+ * reads `require: condition was false`.
+ *
+ * @param tc The current hegel::TestCase.
+ * @param ... The condition, and an optional message.
+ */
+#define HEGEL_REQUIRE(tc, ...)                                                 \
+    ::hegel::internal::require_impl((tc), HEGEL_INTERNAL_ORIGIN, __VA_ARGS__)
+
+/**
+ * @brief Fail the current test case unless two values are equal.
+ *
+ * @code{.cpp}
+ * HEGEL_TEST(addition_commutes)(hegel::TestCase& tc) {
+ *     HEGEL_DRAW(tc, x, gs::integers<int>());
+ *     HEGEL_DRAW(tc, y, gs::integers<int>());
+ *     HEGEL_REQUIRE_EQUAL(tc, x + y, y + x);
+ * }
+ * @endcode
+ *
+ * Prefer this over @ref HEGEL_REQUIRE for an equality property. The report
+ * says how the two values differ.
+ *
+ * @code{.txt}
+ * require_equal: values differ (- lhs / + rhs):
+ *   Team{
+ *     .name = std::string("a"),
+ *     .scores = std::vector<int>{
+ *       1,
+ * -     2,
+ * +     9,
+ *       3,
+ *     },
+ *   }
+ * @endcode
+ *
+ * The values are compared as Hegel renders them for the report, so neither
+ * needs an `operator==`.
+ *
+ * @param tc The current hegel::TestCase.
+ * @param ... The two values, and an optional message.
+ */
+#define HEGEL_REQUIRE_EQUAL(tc, ...)                                           \
+    ::hegel::internal::require_equal_impl((tc), HEGEL_INTERNAL_ORIGIN,         \
+                                          __VA_ARGS__)
+
 /**
  * @brief Replay a failing example for a @ref HEGEL_TEST from its blob.
  *

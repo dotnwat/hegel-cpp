@@ -1,6 +1,9 @@
 --- Failure ------------------------------------------------------------
-Falsified after 1 test case (0 discarded):
-Exception: require: condition was false
+Falsified after 6 test cases (0 discarded):
+
+  auto x = 60;
+
+Exception: too big
 rerun with: hegel::test(test_fn, settings, {"[blob]"})
---- rethrown: require: condition was false
+--- rethrown: too big
 

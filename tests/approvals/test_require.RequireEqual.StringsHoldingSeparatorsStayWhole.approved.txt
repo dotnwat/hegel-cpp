@@ -2,8 +2,11 @@
 Falsified after 1 test case (0 discarded):
 
   require_equal: values differ (- lhs / + rhs):
-  - 3
-  + 4
+    std::vector<std::string>{
+      std::string("a, b"),
+  -   std::string("c{d"),
+  +   std::string("c}d"),
+    }
 
 Exception: require_equal: values differ
 rerun with: hegel::test(test_fn, settings, {"[blob]"})

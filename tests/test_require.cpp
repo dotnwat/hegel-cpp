@@ -6,6 +6,7 @@
 
 #include <cstdint>
 #include <functional>
+#include <map>
 #include <regex>
 #include <string>
 #include <vector>
@@ -100,6 +101,69 @@ TEST(Require, OneCallSiteIsOneFailure) {
     Approvals::verify(out, scrub_blob());
 }
 
+TEST(Fail, CarriesItsMessage) {
+    std::string out = capture(
+        [](hegel::TestCase& tc) { HEGEL_FAIL(tc, "the invariant broke"); });
+    Approvals::verify(out, scrub_blob());
+}
+
+// Like HEGEL_REQUIRE, each use carries its own source position, so two
+// failures on different lines stay two bugs.
+TEST(Fail, DistinctCallSitesAreDistinctFailures) {
+    std::string out = capture(
+        [](hegel::TestCase& tc) {
+            HEGEL_DRAW(
+                tc, x,
+                gs::integers<int32_t>({.min_value = 0, .max_value = 100}));
+            if (x >= 60) {
+                HEGEL_FAIL(tc, "too big");
+            }
+            if (x <= 30) {
+                HEGEL_FAIL(tc, "too small");
+            }
+        },
+        hegel::Settings{.test_cases = 300, .report_multiple_failures = true});
+    Approvals::verify(out, scrub_blob());
+}
+
+// Two different exception types are two origins, which is the only way a raw
+// throw can produce distinct failures today.
+TEST(Fail, RawThrowsOfDifferentTypesStayDistinct) {
+    std::string out = capture(
+        [](hegel::TestCase& tc) {
+            HEGEL_DRAW(
+                tc, x,
+                gs::integers<int32_t>({.min_value = 0, .max_value = 100}));
+            if (x >= 60) {
+                throw std::runtime_error("too big");
+            }
+            if (x <= 30) {
+                throw std::logic_error("too small");
+            }
+        },
+        hegel::Settings{.test_cases = 300, .report_multiple_failures = true});
+    EXPECT_NE(out.find("Failure 1 of 2:"), std::string::npos) << out;
+    Approvals::verify(out, scrub_blob());
+}
+
+// HEGEL_FAIL does not return, so a branch that ends in one needs no value.
+TEST(Fail, DoesNotReturn) {
+    int seen = -1;
+    hegel::test(
+        [&seen](hegel::TestCase& tc) {
+            auto positive_or_fail = [&tc](int n) -> int {
+                if (n < 0) {
+                    HEGEL_FAIL(tc, "negative");
+                }
+                return n;
+            };
+            seen = positive_or_fail(7);
+        },
+        hegel::Settings{.test_cases = 1,
+                        .database = hegel::Database::disabled()});
+    EXPECT_EQ(seen, 7);
+}
+
 // Values with no inner structure diff as a whole.
 TEST(RequireEqual, ScalarsDiffAsWholeValues) {
     std::string out =
@@ -125,6 +189,89 @@ TEST(RequireEqual, InsertedElementIsMarked) {
         std::vector<int> lhs{1, 3};
         std::vector<int> rhs{1, 2, 3};
         HEGEL_REQUIRE_EQUAL(tc, lhs, rhs);
+    });
+    Approvals::verify(out, scrub_blob());
+}
+
+// A map diffs by entry, taking its entries from the map itself.
+TEST(RequireEqual, MapsDiffPerEntry) {
+    std::string out = capture([](hegel::TestCase& tc) {
+        std::map<std::string, int> lhs{{"a", 1}, {"b", 2}};
+        std::map<std::string, int> rhs{{"a", 1}, {"b", 9}};
+        HEGEL_REQUIRE_EQUAL(tc, lhs, rhs);
+    });
+    Approvals::verify(out, scrub_blob());
+}
+
+// A struct diffs by field.
+TEST(RequireEqual, StructsDiffPerField) {
+    struct Point {
+        int x;
+        int y;
+    };
+    std::string out = capture([](hegel::TestCase& tc) {
+        Point lhs{1, 2};
+        Point rhs{1, 9};
+        HEGEL_REQUIRE_EQUAL(tc, lhs, rhs);
+    });
+    Approvals::verify(out, scrub_blob());
+}
+
+// A value holding a string keeps commas and braces inside the string out of
+// the element split.
+TEST(RequireEqual, StringsHoldingSeparatorsStayWhole) {
+    std::string out = capture([](hegel::TestCase& tc) {
+        std::vector<std::string> lhs{"a, b", "c{d"};
+        std::vector<std::string> rhs{"a, b", "c}d"};
+        HEGEL_REQUIRE_EQUAL(tc, lhs, rhs);
+    });
+    Approvals::verify(out, scrub_blob());
+}
+
+// A difference inside a nested value is followed down to the part that
+// changed, instead of marking the whole element holding it.
+TEST(RequireEqual, NestedValuesDescendToTheChangedPart) {
+    std::string out = capture([](hegel::TestCase& tc) {
+        std::vector<std::vector<int>> lhs{{1, 2}, {3, 4}};
+        std::vector<std::vector<int>> rhs{{1, 2}, {3, 9}};
+        HEGEL_REQUIRE_EQUAL(tc, lhs, rhs);
+    });
+    Approvals::verify(out, scrub_blob());
+}
+
+// The descent has no depth limit.
+TEST(RequireEqual, DeeplyNestedValuesDescendAllTheWay) {
+    std::string out = capture([](hegel::TestCase& tc) {
+        std::vector<std::vector<std::vector<int>>> lhs{{{1, 2}}, {{3, 4}}};
+        std::vector<std::vector<std::vector<int>>> rhs{{{1, 2}}, {{3, 9}}};
+        HEGEL_REQUIRE_EQUAL(tc, lhs, rhs);
+    });
+    Approvals::verify(out, scrub_blob());
+}
+
+// A field naming a composite keeps its name on the line that opens the
+// descent.
+TEST(RequireEqual, StructFieldsDescendUnderTheirName) {
+    struct Team {
+        std::string name;
+        std::vector<int> scores;
+    };
+    std::string out = capture([](hegel::TestCase& tc) {
+        Team lhs{"a", {1, 2, 3}};
+        Team rhs{"a", {1, 9, 3}};
+        HEGEL_REQUIRE_EQUAL(tc, lhs, rhs);
+    });
+    Approvals::verify(out, scrub_blob());
+}
+
+// The macro passes its arguments along untouched, so a value written with a
+// comma in its template arguments or its braces needs no parenthesizing and
+// no variable to hold it. A macro that stringified an argument could not do
+// this. Prevents regressions from future macro changes.
+TEST(RequireEqual, ValuesHoldingCommasNeedNoVariable) {
+    std::string out = capture([](hegel::TestCase& tc) {
+        std::pair<int, int> p{1, 2};
+        HEGEL_REQUIRE_EQUAL(tc, std::pair<int, int>{1, 9}, p);
     });
     Approvals::verify(out, scrub_blob());
 }

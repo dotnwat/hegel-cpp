@@ -81,6 +81,7 @@ add_library(hegel
     src/hegel.cpp
     src/generators.cpp
     src/test_case.cpp
+    src/require.cpp
     src/engine.cpp
 )
 target_include_directories(hegel PUBLIC
