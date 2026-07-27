@@ -29,12 +29,12 @@ namespace hegel {
      * fresh owning @c TestCase. It must not outlive the test-case callback.
      *
      * @code{.cpp}
-     * hegel::test([](hegel::TestCase& tc) {
+     * HEGEL_TEST(example)(hegel::TestCase& tc) {
      *     namespace gs = hegel::generators;
-     *     auto x = tc.draw(gs::integers<int>({.min_value = 0}));
+     *     HEGEL_DRAW(tc, x, gs::integers<int>({.min_value = 0}));
      *     tc.assume(x != 0);
      *     tc.note("x = " + std::to_string(x));
-     * });
+     * }
      * @endcode
      */
     class TestCase {
@@ -53,11 +53,37 @@ namespace hegel {
         /**
          * @brief Draw a random value from a generator.
          *
+         * Each draw is printed as a C++ declaration, `auto <name> =
+         * <value>;`, on the final replay of a failing test case and on
+         * every case at Verbosity::Verbose and above. Draws made through
+         * this overload print as `draw_1`, `draw_2`, ... in draw order.
+         * Use the named overload or @ref HEGEL_DRAW to print under a
+         * variable name.
+         *
          * @tparam T The value type produced by @p gen
          * @param gen The generator to draw from
-         * @return A freshly generated value of type T
+         * @return A generated value of type T
          */
         template <typename T> T draw(const generators::Generator<T>& gen) const;
+
+        /**
+         * @brief Draw a random value from a generator, printed under
+         *        @p name.
+         *
+         * @tparam T The value type produced by @p gen
+         * @param name Variable name for the printed declaration. See also
+         *             @ref HEGEL_DRAW, which captures the name
+         *             automatically.
+         * @param gen The generator to draw from
+         * @param repeatable Pass true to print @p name with a 1-based
+         *             suffix per use (`x_1`, `x_2`, ...). Useful when the
+         *             same draw runs in a loop. A non-repeatable name
+         *             prints bare on every use.
+         * @return A freshly generated value of type T
+         */
+        template <typename T>
+        T draw(std::string_view name, const generators::Generator<T>& gen,
+               bool repeatable = false) const;
 
         /**
          * @brief Reject the current test case if @p condition is false.

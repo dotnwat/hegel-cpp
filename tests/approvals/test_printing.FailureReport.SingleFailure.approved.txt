@@ -1,0 +1,3 @@
+auto draw_1 = 0;
+--- rethrown: intentional failure: 0
+

@@ -21,8 +21,9 @@ cmake -B build && cmake --build build
 ctest --test-dir build -R test_name
 ```
 
-## Comments
+## VERY IMPORTANT: Comments
 
+- Adhere to ADS-STE100 Simplified Technical English
 - After making a change, do not describe what code was there previously and why 
 the code was changed.
 - Do not mention Hypothesis, or any other Hegel library, even when the user prompts
@@ -37,6 +38,7 @@ you to port a feature from there.
 - libhegel (Hegel's native engine) — a prebuilt shared library downloaded at configure time by `cmake/libhegel.cmake` from the hegel-rust GitHub release, verified against its published SHA-256, and linked. Override with `-DHEGEL_LIBHEGEL_LIBRARY=/path/to/libhegel_c.<ext>`. The vendored C ABI header lives at `libhegel/hegel.h`. Keep the version and hashes in `nix/flake.nix` in sync.
 - reflect-cpp v0.22.0 (type-directed generator derivation via reflection)
 - Google Test (for unit tests)
+- ApprovalTests.cpp v.10.13.0 (test-only; snapshot tests in tests/approvals/). Fetched at configure time — keep the version in `tests/CMakeLists.txt` and `nix/flake.nix` in sync. `-DHEGEL_APPROVAL_TESTS=OFF` skips the fetch and the snapshot suites for offline builds.
 
 ## Architecture
 
@@ -66,8 +68,8 @@ Public headers in `include/hegel/`:
 - **`generators/`** - Strategy factory functions in `hegel::generators` namespace, split by category: `primitives.h`, `numeric.h`, `strings.h`, `collections.h`, `combinators.h`, `formats.h`, `builds.h`, `default.h` (type-directed derivation via reflect-cpp), `random.h`
 
 Private implementation in `src/`:
-- **`engine.{h,cpp}`** - Wrappers over the libhegel C ABI: run-lifecycle helpers (`hegel::impl`), string-generator construction, and the draw-primitive implementations (including `Generated:` logging on the final replay / at Verbose+)
-- **`test_case.{h,cpp}`** - Private `TestCaseData` struct (owns the `hegel_test_case_t*` — freed in its destructor — plus per-iteration state; the error-reporting context is per-thread via `impl::thread_context()`) and the `TestCase` method implementations
+- **`engine.{h,cpp}`** - Wrappers over the libhegel C ABI: run-lifecycle helpers (`hegel::impl`), string-generator construction, and the draw-primitive implementations
+- **`test_case.{h,cpp}`** - Private `TestCaseData` struct (owns the `hegel_test_case_t*` — freed in its destructor — plus per-iteration state; the error-reporting context is per-thread via `impl::thread_context()`) and the `TestCase` method implementations, including `DrawLogScope` — each outermost `TestCase::draw` prints its composed value as a C++ declaration (`auto <name> = <value>;`, rendered by `include/hegel/repr.h`) on the final replay / at Verbose+
 - **`generators.cpp` / `hegel.cpp`** - implementations for the corresponding public headers; `hegel.cpp` also holds the `hegel::test()` run loop
 - **`cmake/libhegel.cmake`** - downloads/verifies/links libhegel and exposes the `hegel::libhegel` imported target; `libhegel/hegel.h` is the vendored C ABI header
 

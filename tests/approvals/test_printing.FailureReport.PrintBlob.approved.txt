@@ -1,0 +1,4 @@
+Failure blob: [blob]
+auto draw_1 = 0;
+--- rethrown: silly error
+

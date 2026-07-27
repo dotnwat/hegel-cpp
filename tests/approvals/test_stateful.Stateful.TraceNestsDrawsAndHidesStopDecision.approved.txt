@@ -1,0 +1,9 @@
+Starting phase: Generate
+Step 1: step
+  auto amount = 1;
+Step 2: step
+  auto amount = 1;
+Step 3: step
+  auto amount = 1;
+Ending phase: Generate
+

@@ -122,12 +122,16 @@ hegel_add_test(NAME test_generators_combinators
 hegel_add_test(NAME test_generators_random
     SOURCE test_generators_random.cpp)
 hegel_add_test(NAME test_stateful
-    SOURCE test_stateful.cpp)
+    SOURCE test_stateful.cpp
+    USE_UTILS
+    APPROVALS)
 
 
 # Guiding generation: reject(), target(), repeat().
 hegel_add_test(NAME test_guiding SOURCE test_guiding.cpp)
 
+# Value printer for draw output.
+hegel_add_test(NAME test_repr SOURCE test_repr.cpp)
 # Test-case cloning: clone(), spawn()/join(), and clone output approval.
 hegel_add_test(NAME test_clone SOURCE test_clone.cpp USE_UTILS APPROVALS)
 
@@ -140,15 +144,17 @@ target_link_libraries(subject PRIVATE hegel)
 
 # Printing / failure reporting: subject-subprocess output tests plus in-process
 # per-verbosity diagnostics. Needs the subject binary for the output scenarios.
-add_executable(test_printing test_printing.cpp)
-target_link_libraries(test_printing
-    PRIVATE hegel_tests_common GTest::gtest_main)
-add_dependencies(test_printing subject)
-target_compile_definitions(test_printing
-    PRIVATE
-        HEGEL_SUBJECT_BIN="$<TARGET_FILE:subject>"
-)
-gtest_discover_tests(test_printing)
+if(HEGEL_APPROVAL_TESTS)
+    add_executable(test_printing test_printing.cpp common/approval_main.cpp)
+    target_link_libraries(test_printing
+        PRIVATE hegel_tests_common ApprovalTests::ApprovalTests)
+    add_dependencies(test_printing subject)
+    target_compile_definitions(test_printing
+        PRIVATE
+            HEGEL_SUBJECT_BIN="$<TARGET_FILE:subject>"
+    )
+    gtest_discover_tests(test_printing)
+endif()
 
 add_executable(test_gtest test_gtest.cpp)
 target_link_libraries(test_gtest

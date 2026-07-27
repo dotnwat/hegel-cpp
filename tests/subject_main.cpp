@@ -1,21 +1,13 @@
 // Prebuilt helper binary for the Output tests. Each scenario runs a property
-// that fails in a specific way; the uncaught exception from hegel::test() makes
-// the process exit non-zero and print the failure to stderr, which the Output
-// tests inspect. Selecting the scenario by argv avoids recompiling per test.
+// that fails in a specific way; main() prints the surfaced exception message
+// to stderr and exits non-zero, which the Output tests inspect. Selecting
+// the scenario by argv avoids recompiling per test.
 #include <cstdint>
 #include <cstdio>
 #include <stdexcept>
 #include <string>
 
 #include <hegel/hegel.h>
-
-#ifdef HEGEL_COVERAGE_BUILD
-// LLVM's profile runtime writes coverage data from an exit handler, but every
-// failing scenario here exits via an uncaught exception -> std::terminate ->
-// abort(), which skips exit handlers. Flush manually before dying so these
-// scenarios contribute coverage like any in-process test.
-extern "C" int __llvm_profile_write_file(void);
-#endif
 
 namespace gs = hegel::generators;
 
@@ -164,13 +156,12 @@ int main(int argc, char** argv) {
             std::fprintf(stderr, "unknown scenario: %s\n", argv[1]);
             return 2;
         }
+    } catch (const std::exception& e) {
+        std::fprintf(stderr, "%s\n", e.what());
+        return 1;
     } catch (...) {
-#ifdef HEGEL_COVERAGE_BUILD
-        __llvm_profile_write_file();
-#endif
-        // Rethrow so the process still dies from an uncaught exception,
-        // printing the failure to stderr exactly as before.
-        throw;
+        std::fprintf(stderr, "test failed with a non-std exception\n");
+        return 1;
     }
     return 0;
 }

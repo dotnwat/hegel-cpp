@@ -8,6 +8,7 @@
 
 #include "config.h"
 #include "internal.h"
+#include "repr.h"
 #include "test_case.h"
 
 /**
@@ -42,10 +43,10 @@ namespace hegel::generators {
      * @code{.cpp}
      * namespace gs = hegel::generators;
      *
-     * hegel::test([](hegel::TestCase& tc) {
+     * HEGEL_TEST(generator_tour)(hegel::TestCase& tc) {
      *     // Create a generator and draw a value
      *     auto int_gen = gs::integers<int>({.min_value = 0, .max_value = 100});
-     *     int value = tc.draw(int_gen);
+     *     HEGEL_DRAW(tc, value, int_gen);
      *
      *     // Transform with map
      *     auto squared = int_gen.map([](int x) { return x * x; });
@@ -58,7 +59,7 @@ namespace hegel::generators {
      *         .flat_map([](size_t len) {
      *             return gs::text({.min_size = len, .max_size = len});
      *         });
-     * });
+     * }
      * @endcode
      *
      * @tparam T The type to generate values for
@@ -261,7 +262,18 @@ namespace hegel {
 
     template <typename T>
     T TestCase::draw(const generators::Generator<T>& gen) const {
-        return gen.do_draw(*this);
+        return draw(std::string_view(), gen);
+    }
+
+    template <typename T>
+    T TestCase::draw(std::string_view name, const generators::Generator<T>& gen,
+                     bool repeatable) const {
+        internal::DrawLogScope scope(*this, name, repeatable);
+        T value = gen.do_draw(*this);
+        if (scope.should_log()) {
+            scope.log(internal::repr(value));
+        }
+        return value;
     }
 
 } // namespace hegel

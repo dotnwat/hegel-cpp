@@ -4,6 +4,7 @@
 #include <exception>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace hegel {
@@ -56,8 +57,7 @@ namespace hegel::internal {
     uint64_t draw_integer_unsigned(const TestCase& tc, uint64_t min_value,
                                    uint64_t max_value);
     bool draw_boolean(const TestCase& tc, double p,
-                      std::optional<bool> forced = std::nullopt,
-                      bool silent = false);
+                      std::optional<bool> forced = std::nullopt);
     double draw_float(const TestCase& tc, uint32_t width, double min_value,
                       double max_value, bool allow_nan, bool allow_infinity,
                       bool exclude_min, bool exclude_max,
@@ -94,6 +94,24 @@ namespace hegel::internal {
 
       private:
         const TestCase& tc_;
+    };
+
+    class DrawLogScope {
+      public:
+        DrawLogScope(const TestCase& tc, std::string_view name,
+                     bool repeatable);
+        ~DrawLogScope();
+        DrawLogScope(const DrawLogScope&) = delete;
+        DrawLogScope& operator=(const DrawLogScope&) = delete;
+
+        bool should_log() const;
+
+        void log(const std::string& rendered) const;
+
+      private:
+        const TestCase& tc_;
+        bool outermost_;
+        std::string display_;
     };
     /* Exception thrown when a test case is rejected and should be
      * discarded (e.g. by `TestCase::assume(false)`, an exhausted

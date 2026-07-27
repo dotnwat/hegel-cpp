@@ -51,10 +51,10 @@
         }
     };
 
-    hegel::test([](hegel::TestCase& tc) {
+    HEGEL_TEST(stack_operations)(hegel::TestCase& tc) {
         IntegerStack machine;
         hegel::stateful::run(machine, tc);
-    });
+    }
  * @endcode
  */
 namespace hegel::stateful {
@@ -100,7 +100,7 @@ namespace hegel::stateful {
                     hegel::stateful::Rule<Allocator>(
                         "free", [](hegel::TestCase& tc, Allocator& m) {
                             // draws a handle a prior alloc put in the pool
-                            int h = tc.draw(
+                            HEGEL_DRAW(tc, h,
                                 hegel::stateful::values_consumed(m.handles));
                             m.live.erase(h);
                         }),
@@ -108,10 +108,10 @@ namespace hegel::stateful {
             }
         };
 
-        hegel::test([](hegel::TestCase& tc) {
+        HEGEL_TEST(allocator_state_machine)(hegel::TestCase& tc) {
             Allocator machine(tc);
             hegel::stateful::run(machine, tc);
-        });
+        }
      * @endcode
      *
      * @tparam T The type of variables in the pool.
@@ -215,10 +215,10 @@ namespace hegel::stateful {
      * @brief Returns a value from the pool and removes it.
      *
      * @code{.cpp}
-        hegel::test([](hegel::TestCase& tc) {
+        HEGEL_TEST(pool_round_trip)(hegel::TestCase& tc) {
             hegel::stateful::Pool<int> pool(tc);
-            std::set<int> original_set =
-                tc.draw(gs::sets(gs::integers<int>(), {.max_size = 10}));
+            HEGEL_DRAW(tc, original_set,
+                       gs::sets(gs::integers<int>(), {.max_size = 10}));
 
             for (int num : original_set) {
                 pool.add(num);
@@ -231,7 +231,7 @@ namespace hegel::stateful {
             }
 
             assert(original_set == returned_set);
-        });
+        }
      * @endcode
      *
      * @tparam T Element type
@@ -246,11 +246,11 @@ namespace hegel::stateful {
      * @brief Returns a value from the pool without removing it.
      *
      * @code{.cpp}
-        hegel::test([](hegel::TestCase& tc) {
+        HEGEL_TEST(pool_reuse)(hegel::TestCase& tc) {
             hegel::stateful::Pool<int> pool(tc);
-            uint8_t sz = tc.draw(gs::integers<uint8_t>());
-            std::set<int> original_set =
-                tc.draw(gs::sets(gs::integers<int>(), {.max_size = sz}));
+            HEGEL_DRAW(tc, sz, gs::integers<uint8_t>());
+            HEGEL_DRAW(tc, original_set,
+                       gs::sets(gs::integers<int>(), {.max_size = sz}));
 
             for (int num : original_set) {
                 pool.add(num);
@@ -261,7 +261,7 @@ namespace hegel::stateful {
             }
 
             assert(pool.size() == original_set.size());
-        });
+        }
      * @endcode
      *
      * @tparam T Element type
@@ -473,8 +473,7 @@ namespace hegel::stateful {
         while (true) {
             internal::start_span(tc, internal::SpanLabel::StatefulRule);
             // gives engine more control of when to stop generating steps
-            if (internal::draw_boolean(tc, p_stop, must_stop(steps_run),
-                                       /*silent=*/true)) {
+            if (internal::draw_boolean(tc, p_stop, must_stop(steps_run))) {
                 internal::stop_span(tc);
                 if (num_steps_succeeded == 0) {
                     tc.reject();

@@ -445,6 +445,16 @@ namespace hegel {
                 failed++;
                 std::fprintf(stderr, "[ FAILED ] %s\n%s\n", test.name,
                              e.what());
+            } catch (...) {
+                failed++;
+                std::string origin = "unknown exception";
+                if (const std::type_info* tinfo =
+                        abi::__cxa_current_exception_type()) {
+                    origin = demangle(tinfo->name());
+                }
+                std::fprintf(stderr,
+                             "[ FAILED ] %s\nnon-std exception of type %s\n",
+                             test.name, origin.c_str());
             }
         }
         std::fprintf(stderr, "Ran %zu Hegel tests: %zu failed\n",

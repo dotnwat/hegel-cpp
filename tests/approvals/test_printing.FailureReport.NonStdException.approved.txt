@@ -1,0 +1,3 @@
+auto draw_1 = 5;
+--- rethrown: <non-std exception>
+

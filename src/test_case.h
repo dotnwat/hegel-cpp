@@ -8,6 +8,8 @@
 #include <hegel/settings.h>
 
 #include <cstddef>
+#include <map>
+#include <set>
 #include <string>
 
 namespace hegel::impl::test_case {
@@ -22,6 +24,9 @@ namespace hegel::impl::test_case {
         int64_t stateful_step_count;
         Mode mode;
         int note_indent = 0;
+        int draw_depth = 0;
+        std::map<std::string, int> draw_name_counts;
+        std::set<std::string> taken_display_names;
 
         // Releases the owned libhegel handle. The owning TestCase's
         // unique_ptr runs this on scope exit.

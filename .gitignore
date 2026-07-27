@@ -3,6 +3,7 @@ build/
 .hegel
 __pycache__
 .cache
+.vscode/
 
 .devcontainer/
 devcontainer
