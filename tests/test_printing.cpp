@@ -53,18 +53,31 @@ TEST(Output, ExceptionMessageIsPrinted) {
 }
 
 namespace {
-    // Runs a failing property with a fixed seed so the shrunk replay, and
-    // with it the whole report, is deterministic.
-    std::string
-    capture_failure_report(const std::function<void(hegel::TestCase&)>& body,
-                           hegel::Settings settings = {}) {
+    // A reproduction blob encodes engine internals and changes with the
+    // engine version, so the snapshots pin the report layout around a
+    // placeholder instead of the payload.
+    ApprovalTests::Options scrub_blob() {
+        return ApprovalTests::Options(
+            ApprovalTests::Scrubbers::createRegexScrubber(
+                std::regex(R"RX((rerun with: .*)"[A-Za-z0-9+/=]*")RX"),
+                R"RX($1"[blob]")RX"));
+    }
+
+    // A fixed seed keeps the shrunk replay, and with it the whole report,
+    // deterministic.
+    hegel::Settings report_settings(hegel::Settings settings = {}) {
         settings.seed = 1;
         settings.derandomize = false;
         settings.database = hegel::Database::disabled();
+        return settings;
+    }
+
+    // Returns what one failing run printed, plus the exception it re-raised.
+    std::string capture_report(const std::function<void()>& run) {
         testing::internal::CaptureStderr();
         std::string rethrown = "<no exception>";
         try {
-            hegel::test(body, settings);
+            run();
         } catch (const std::exception& e) {
             rethrown = e.what();
         } catch (...) {
@@ -73,6 +86,17 @@ namespace {
         return testing::internal::GetCapturedStderr() +
                "--- rethrown: " + rethrown + "\n";
     }
+
+    std::string
+    capture_failure_report(const std::function<void(hegel::TestCase&)>& body,
+                           hegel::Settings settings = {}) {
+        return capture_report(
+            [&] { hegel::test(body, report_settings(settings)); });
+    }
+
+    const hegel::TestLocation kLocation{"my_property", "tests/example.cpp", 42};
+
+    void throw_boom(hegel::TestCase&) { throw std::runtime_error("boom"); }
 } // namespace
 
 // Fails on every case; the minimal counterexample is 0.
@@ -81,7 +105,7 @@ TEST(FailureReport, SingleFailure) {
         int32_t x = tc.draw(gs::integers<int32_t>());
         throw std::runtime_error("intentional failure: " + std::to_string(x));
     });
-    Approvals::verify(out);
+    Approvals::verify(out, scrub_blob());
 }
 
 // Fails for x >= 10; the replayed counterexample shrinks to exactly 10.
@@ -92,7 +116,7 @@ TEST(FailureReport, OriginStableAcrossDrawnValues) {
             throw std::runtime_error("failure with x=" + std::to_string(x));
         }
     });
-    Approvals::verify(out);
+    Approvals::verify(out, scrub_blob());
 }
 
 // A non-std exception still produces the replay output before re-raising.
@@ -103,7 +127,55 @@ TEST(FailureReport, NonStdException) {
             throw 42;
         }
     });
-    Approvals::verify(out);
+    Approvals::verify(out, scrub_blob());
+}
+
+// A body that throws before it draws anything has nothing to show between the
+// count and the exception, so the report keeps no empty body block.
+TEST(FailureReport, NoDrawsPrintsBodylessReport) {
+    std::string out = capture_failure_report(throw_boom);
+    Approvals::verify(out, scrub_blob());
+}
+
+// A test location names the test and its source line in the header. The
+// location overload takes no blobs, so naming a test costs one argument.
+TEST(FailureReport, LocationNamesTheTest) {
+    std::string out = capture_report(
+        [] { hegel::test(throw_boom, kLocation, report_settings()); });
+    Approvals::verify(out, scrub_blob());
+}
+
+// HEGEL_TEST goes through its own entry point, which prints the annotation
+// form of the rerun hint. HEGEL_REPRODUCE_FAILURE only applies to a test that
+// macro defined, so every other caller keeps the plain form above — the same
+// location through hegel::test() proves the two are independent.
+TEST(FailureReport, MacroDefinedTestGetsAnnotationRerunHint) {
+    std::string out = capture_report([] {
+        hegel::internal::test_from_macro(throw_boom, kLocation,
+                                         report_settings(), {});
+    });
+    Approvals::verify(out, scrub_blob());
+}
+
+// Rejected cases count as discarded, apart from the cases that ran.
+TEST(FailureReport, DiscardedCasesAreCounted) {
+    int calls = 0;
+    std::string out = capture_failure_report([&calls](hegel::TestCase& tc) {
+        if (++calls <= 3) {
+            tc.reject();
+        }
+        throw std::runtime_error("boom");
+    });
+    Approvals::verify(out, scrub_blob());
+}
+
+// A note that spans several lines keeps every line inside the body's indent.
+TEST(FailureReport, MultiLineNoteIsIndented) {
+    std::string out = capture_failure_report([](hegel::TestCase& tc) {
+        tc.note("first line\nsecond line");
+        throw std::runtime_error("boom");
+    });
+    Approvals::verify(out, scrub_blob());
 }
 
 namespace {
@@ -123,7 +195,7 @@ namespace {
 TEST(FailureReport, MultipleFailuresReported) {
     std::string out = capture_failure_report(
         two_bugs, hegel::Settings{.report_multiple_failures = true});
-    Approvals::verify(out);
+    Approvals::verify(out, scrub_blob());
 }
 
 // With report_multiple_failures off, the run stops at the first failing
@@ -131,23 +203,15 @@ TEST(FailureReport, MultipleFailuresReported) {
 TEST(FailureReport, MultipleFailuresOffReportsOne) {
     std::string out = capture_failure_report(
         two_bugs, hegel::Settings{.report_multiple_failures = false});
-    Approvals::verify(out);
+    Approvals::verify(out, scrub_blob());
 }
 
-// The blob's base64 payload encodes engine internals and is scrubbed; the
-// snapshot pins the report layout around it.
-TEST(FailureReport, PrintBlob) {
+// print_blob = false drops the rerun hint. The rest of the report stays.
+TEST(FailureReport, PrintBlobOffDropsRerunHint) {
     std::string out = capture_failure_report(
-        [](hegel::TestCase& tc) {
-            int32_t x = tc.draw(gs::integers<int32_t>());
-            if (x >= 0) {
-                throw std::runtime_error("silly error");
-            }
-        },
-        hegel::Settings{.print_blob = true});
-    auto scrub_blob = ApprovalTests::Scrubbers::createRegexScrubber(
-        std::regex(R"(Failure blob: \S+)"), "Failure blob: [blob]");
-    Approvals::verify(out, ApprovalTests::Options(scrub_blob));
+        [](hegel::TestCase&) { throw std::runtime_error("silly error"); },
+        hegel::Settings{.print_blob = false});
+    Approvals::verify(out);
 }
 
 // ---------------------------------------------------------------------------
