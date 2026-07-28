@@ -167,22 +167,22 @@ namespace hegel::internal {
     [[noreturn]] void fail_require(const char* origin, std::string message);
 
     // Implementation of HEGEL_FAIL. `origin` is the macro's call site.
-    [[noreturn]] inline void fail_impl(const TestCase& tc, const char* origin,
-                                       std::string_view message) {
+    [[noreturn]] inline void
+    fail_impl(const TestCase& tc, const char* origin,
+              std::string_view message = "HEGEL_FAIL: test case failed") {
         // The test case is accepted for symmetry with the other per-test-case
         // operations. The failure itself is client-side.
         (void)tc;
         fail_require(origin, std::string(message));
     }
 
-    // Implementation of HEGEL_REQUIRE. `origin` is the macro's call site.
-    inline void require_impl(const TestCase& tc, const char* origin,
-                             bool condition, std::string_view message = "") {
+    // Implementation of HEGEL_REQUIRE_EQUAL. `origin` is the macro's call site.
+    inline void require_impl(
+        const TestCase& tc, const char* origin, bool condition,
+        std::string_view message = "HEGEL_REQUIRE: condition was false") {
         (void)tc;
         if (!condition) {
-            fail_require(origin, message.empty()
-                                     ? "require: condition was false"
-                                     : std::string(message));
+            fail_require(origin, std::string(message));
         }
     }
 
@@ -190,16 +190,15 @@ namespace hegel::internal {
     // repr() renders them, so neither needs an operator==. That rendering is
     // the comparison, so it happens on every call.
     template <typename T>
-    void require_equal_impl(const TestCase& tc, const char* origin,
-                            const T& left, const T& right,
-                            std::string_view message = "") {
+    void require_equal_impl(
+        const TestCase& tc, const char* origin, const T& left, const T& right,
+        std::string_view message = "HEGEL_REQUIRE_EQUAL: values differ") {
         std::string left_repr = repr(left);
         std::string right_repr = repr(right);
         if (left_repr == right_repr) {
             return;
         }
-        std::string text = message.empty() ? "require_equal: values differ"
-                                           : std::string(message);
+        std::string text(message);
         // note() drops a message that will not print, but only after its
         // argument is built. This guard keeps the two value trees and the
         // descent through them out of every case that fails on the way to

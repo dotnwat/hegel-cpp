@@ -1,14 +1,14 @@
 --- Failure ------------------------------------------------------------
 Falsified after 1 test case (0 discarded):
 
-  require_equal: values differ (- lhs / + rhs):
+  HEGEL_REQUIRE_EQUAL: values differ (- lhs / + rhs):
     Point{
       .x = 1,
   -   .y = 2,
   +   .y = 9,
     }
 
-Exception: require_equal: values differ
+Exception: HEGEL_REQUIRE_EQUAL: values differ
 rerun with: hegel::test(test_fn, settings, {"[blob]"})
---- rethrown: require_equal: values differ
+--- rethrown: HEGEL_REQUIRE_EQUAL: values differ
 

@@ -95,8 +95,21 @@
  *
  * This test asserts that any integer is less than 50, which is obviously
  * incorrect. Hegel will find a test case that makes this assertion fail,
- * and then shrink it to find the smallest counterexample. The replay
- * prints `auto n = 50;`.
+ * and then shrink it to find the smallest counterexample. It reports:
+ *
+ * @code{.txt}
+ * --- Failure: below_50 (my_test.cpp:3) ----------------------------------
+ * Falsified after 3 test cases (0 discarded):
+ *
+ *   auto n = 50;
+ *
+ * Exception: std::runtime_error: n should be below 50
+ * rerun with: HEGEL_REPRODUCE_FAILURE(below_50, "AAEAAAAACgEAAAAy")
+ * @endcode
+ *
+ * The header names the test and where it is defined, the count says how
+ * many cases it took to find the failure, and the falsifying value(s). The last
+ * line replays that exact failure. See @ref HEGEL_REPRODUCE_FAILURE.
  *
  * To fix this test, you can constrain the integers you generate with the
  * `min_value` and `max_value` parameters:
@@ -196,9 +209,83 @@
  * Call `.override(...)` on the returned generator to customize individual
  * fields (see @ref hegel::generators::DerivedGenerator::override "override").
  *
+ * @subsection checking_properties Check properties
+ *
+ * Hegel has three macros for stating what must hold.
+ *
+ * @ref HEGEL_REQUIRE_EQUAL states that two values are equal:
+ *
+ * @code{.cpp}
+ * HEGEL_TEST(addition_commutes)(hegel::TestCase& tc) {
+ *     HEGEL_DRAW(tc, x, gs::integers<int>());
+ *     HEGEL_DRAW(tc, y, gs::integers<int>());
+ *     HEGEL_REQUIRE_EQUAL(tc, x + y, y + x);
+ * }
+ * @endcode
+ *
+ * The report shows a difference of the two values, down to the part that
+ * changed, rather than only reporting that they differ.
+ *
+ * @ref HEGEL_REQUIRE states a condition, with a message the report prints:
+ *
+ * @code{.cpp}
+ * HEGEL_TEST(running_sum_stays_positive)(hegel::TestCase& tc) {
+ *     HEGEL_DRAW(tc, l, gs::vectors(gs::integers<int>()));
+ *     HEGEL_REQUIRE(tc, lowest_running_sum(l) >= 0,
+ *                   "running sum went negative");
+ * }
+ * @endcode
+ *
+ * @code{.txt}
+ * --- Failure: running_sum_stays_positive (my_test.cpp:17) ---------------
+ * Falsified after 2 test cases (0 discarded):
+ *
+ *   auto l = std::vector<int>{-1};
+ *
+ * Exception: running sum went negative
+ * rerun with: HEGEL_REPRODUCE_FAILURE(running_sum_stays_positive,
+ * "AAMAAAABAQAKAQAAAP8BAA==")
+ * @endcode
+ *
+ * @ref HEGEL_FAIL fails outright, where there is no condition to write, such as
+ * an unreachable branch, or a step that cannot go on:
+ *
+ * @code{.cpp}
+ * HEGEL_TEST(parses_its_own_output)(hegel::TestCase& tc) {
+ *     HEGEL_DRAW(tc, n, gs::integers<int>({.min_value = 0}));
+ *     std::optional<int> parsed = parse(render(n));
+ *     if (!parsed) {
+ *         HEGEL_FAIL(tc, "rendered value did not parse back");
+ *     }
+ *     HEGEL_REQUIRE_EQUAL(tc, *parsed, n);
+ * }
+ * @endcode
+ *
+ * @code{.txt}
+ * --- Failure: parses_its_own_output (my_test.cpp:23) --------------------
+ * Falsified after 2 test cases (0 discarded):
+ *
+ *   auto n = 1000;
+ *
+ * Exception: rendered value did not parse back
+ * rerun with: HEGEL_REPRODUCE_FAILURE(parses_its_own_output,
+ * "AAEAAAAACgIAAADoAw==")
+ * @endcode
+ *
+ * @ref HEGEL_FAIL does not return, so the branch above needs no value and
+ * the code after it may use @c parsed.
+ *
+ * Prefer these macros over a raw @c throw. Hegel groups counterexamples by
+ * origin to tell one bug from another, and a raw throw carries no source
+ * position. Every throw of one type therefore shares an origin and reports as a
+ * single bug. Each of invocation of these macros count as a different origin,
+ * so failures on different lines stay distinct under
+ * Settings::report_multiple_failures.
+ *
  * @subsection debug_failing Debug your failing test cases
  *
- * Use @tc{note} to attach debug information:
+ * Drawn values print automatically in the failure report (`auto x = ...;`).
+ * Use @tc{note} to add whatever context the values alone do not show:
  *
  * @code{.cpp}
  * HEGEL_TEST(addition_commutes)(hegel::TestCase& tc) {
@@ -206,14 +293,12 @@
  *     HEGEL_DRAW(tc, y, gs::integers<int>());
  *     tc.note("x + y = " + std::to_string(x + y) +
  *             ", y + x = " + std::to_string(y + x));
- *     if (x + y != y + x) {
- *         throw std::runtime_error("addition is not commutative");
- *     }
+ *     HEGEL_REQUIRE_EQUAL(tc, x + y, y + x);
  * }
  * @endcode
  *
- * Drawn values print automatically on that replay (`auto x = ...;`).
- * Notes add whatever extra context the values alone do not show.
+ * Notes and drawn values print on the failing replay only. Raise
+ * Settings::verbosity to Verbosity::Verbose to see them for every case.
  *
  * @subsection change_test_cases Change the number of test cases
  *
@@ -515,19 +600,26 @@ namespace hegel {
  * }
  * @endcode
  *
- * The macro does not return, so a branch ending in it needs no value.
+ * The macro does not return.
  *
  * Prefer this over a raw @c throw. Hegel groups counterexamples by origin to
- * tell one bug from another, and a raw throw carries no source position, so
- * every @c std::runtime_error in a run shares one origin and reports as a
- * single bug. Each @c HEGEL_FAIL carries its own position, so failures on
- * different lines stay distinct under Settings::report_multiple_failures.
+ * tell one bug from another, and a raw throw carries no source position. Every
+ * throw of one type therefore shares an origin and reports as a single bug.
+ * Each @c HEGEL_FAIL counts as a different origin, so failures on different
+ * lines stay distinct under Settings::report_multiple_failures.
  *
  * @param tc The current hegel::TestCase.
- * @param ... The failure message.
+ * @param ... The optional failure message. Without one the report reads
+ *            `fail: test case failed`.
  */
+// The message is taken as trailing arguments rather than as one named
+// parameter so that it may hold a comma the preprocessor would otherwise
+// split on, as in a template argument list. __VA_ARGS__ puts those commas
+// back. __VA_OPT__ drops the comma before it when no message is given, which
+// is what makes the message optional.
 #define HEGEL_FAIL(tc, ...)                                                    \
-    ::hegel::internal::fail_impl((tc), HEGEL_INTERNAL_ORIGIN, __VA_ARGS__)
+    ::hegel::internal::fail_impl((tc), HEGEL_INTERNAL_ORIGIN __VA_OPT__(, )    \
+                                           __VA_ARGS__)
 
 /**
  * @brief Fail the current test case unless @p condition holds.
@@ -575,11 +667,10 @@ namespace hegel {
  *   }
  * @endcode
  *
- * The values are compared as Hegel renders them for the report, so neither
- * needs an `operator==`.
+ * The values are compared as Hegel renders them for the report.
  *
  * @param tc The current hegel::TestCase.
- * @param ... The two values, and an optional message.
+ * @param ... The two values to compare and an optional message.
  */
 #define HEGEL_REQUIRE_EQUAL(tc, ...)                                           \
     ::hegel::internal::require_equal_impl((tc), HEGEL_INTERNAL_ORIGIN,         \
@@ -588,10 +679,14 @@ namespace hegel {
 /**
  * @brief Replay a failing example for a @ref HEGEL_TEST from its blob.
  *
- * Place this above the matching HEGEL_TEST, keyed by the same name. The test
- * then replays the given reproduction blob (as printed by Settings::print_blob)
- * instead of generating new cases. Delete the annotation to return to a normal
- * run.
+ * @code{.txt}
+ * rerun with: HEGEL_REPRODUCE_FAILURE(addition_commutes, "AAEAAAAACgEAAAAA")
+ * @endcode
+ *
+ * Place it above the matching HEGEL_TEST, keyed by the same name. The test
+ * then replays that example instead of generating new cases. Delete the
+ * annotation to return to a normal run. Settings::print_blob controls whether
+ * the report prints the line.
  *
  * At least one blob is required. Additional blobs are accepted for bookkeeping,
  * but only the first is replayed.

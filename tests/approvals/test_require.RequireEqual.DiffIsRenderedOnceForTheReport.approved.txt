@@ -2,11 +2,11 @@
 Falsified after 1 test case (0 discarded):
 
   auto x = 0;
-  require_equal: values differ (- lhs / + rhs):
+  HEGEL_REQUIRE_EQUAL: values differ (- lhs / + rhs):
   - 0
   + 101
 
-Exception: require_equal: values differ
+Exception: HEGEL_REQUIRE_EQUAL: values differ
 rerun with: hegel::test(test_fn, settings, {"[blob]"})
---- rethrown: require_equal: values differ
+--- rethrown: HEGEL_REQUIRE_EQUAL: values differ
 

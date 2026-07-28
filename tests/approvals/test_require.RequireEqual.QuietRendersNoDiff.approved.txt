@@ -1,2 +1,2 @@
---- rethrown: require_equal: values differ
+--- rethrown: HEGEL_REQUIRE_EQUAL: values differ
 

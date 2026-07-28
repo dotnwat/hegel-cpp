@@ -101,6 +101,12 @@ TEST(Require, OneCallSiteIsOneFailure) {
     Approvals::verify(out, scrub_blob());
 }
 
+TEST(Fail, DefaultMessage) {
+    std::string out =
+        capture([](hegel::TestCase& tc) { HEGEL_FAIL(tc); }); // NOLINT
+    Approvals::verify(out, scrub_blob());
+}
+
 TEST(Fail, CarriesItsMessage) {
     std::string out = capture(
         [](hegel::TestCase& tc) { HEGEL_FAIL(tc, "the invariant broke"); });
