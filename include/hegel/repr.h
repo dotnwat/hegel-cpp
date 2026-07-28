@@ -233,6 +233,20 @@ namespace hegel::internal {
 
     } // namespace repr_detail
 
+    template <typename T>
+    inline constexpr bool is_renderable_v =
+        std::is_integral_v<T> || std::is_enum_v<T> ||
+        std::is_floating_point_v<T> || std::is_same_v<T, std::string> ||
+        std::is_same_v<T, std::monostate> || repr_detail::is_pair<T>::value ||
+        repr_detail::is_tuple<T>::value || repr_detail::is_optional<T>::value ||
+        repr_detail::is_variant<T>::value || repr_detail::is_vector<T>::value ||
+        repr_detail::is_set<T>::value || repr_detail::is_std_array<T>::value ||
+        repr_detail::is_map<T>::value ||
+#if HEGEL_HAS_REFLECTION
+        repr_detail::is_reflectable<T>::value ||
+#endif
+        repr_detail::has_ostream_operator<T>::value;
+
     // C++ source spelling of T, for use inside rendered expressions.
     template <typename T> std::string cpp_type_name() {
         if constexpr (std::is_same_v<T, bool>) {

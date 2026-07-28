@@ -6,6 +6,7 @@
 
 #include <cstdint>
 #include <functional>
+#include <limits>
 #include <map>
 #include <regex>
 #include <string>
@@ -24,6 +25,14 @@ namespace {
         return ApprovalTests::Options(
             ApprovalTests::Scrubbers::createRegexScrubber(
                 std::regex(R"("[A-Za-z0-9+/=]{8,}")"), R"("[blob]")"));
+    }
+
+    // Settings for a run whose outcome is what matters rather than its
+    // report, which Quiet keeps out of the test output.
+    hegel::Settings quiet_run() {
+        return {.test_cases = 1,
+                .verbosity = hegel::Verbosity::Quiet,
+                .database = hegel::Database::disabled()};
     }
 
     // Runs a property with a fixed seed and returns the report it printed,
@@ -168,6 +177,22 @@ TEST(Fail, DoesNotReturn) {
         hegel::Settings{.test_cases = 1,
                         .database = hegel::Database::disabled()});
     EXPECT_EQ(seen, 7);
+}
+
+TEST(RequireEqual, ComparesByRenderingNotOperatorEqual) {
+    EXPECT_NO_THROW(hegel::test(
+        [](hegel::TestCase& tc) {
+            double nan = std::numeric_limits<double>::quiet_NaN();
+            HEGEL_REQUIRE_EQUAL(tc, nan, nan);
+        },
+        quiet_run()));
+    EXPECT_ANY_THROW(hegel::test(
+        [](hegel::TestCase& tc) {
+            double positive = 0.0;
+            double negative = -0.0;
+            HEGEL_REQUIRE_EQUAL(tc, positive, negative);
+        },
+        quiet_run()));
 }
 
 // Values with no inner structure diff as a whole.
