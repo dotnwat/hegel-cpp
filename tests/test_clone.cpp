@@ -4,6 +4,7 @@
 // CloneOutput suite pins the printed trace/counterexample of a run that clones.
 
 #include <functional>
+#include <regex>
 #include <stdexcept>
 #include <string>
 #include <thread>
@@ -188,6 +189,15 @@ TEST(Clone, WorkerDestructorJoinsIfNotJoined) {
 namespace {
     constexpr const char* kNote = "SENTINEL_NOTE";
 
+    // A reproduction blob encodes engine internals and changes with the
+    // engine version, so the snapshot pins the report layout around a
+    // placeholder instead of the payload.
+    ApprovalTests::Options scrub_blob() {
+        return ApprovalTests::Options(
+            ApprovalTests::Scrubbers::createRegexScrubber(
+                std::regex(R"("[A-Za-z0-9+/=]{8,}")"), R"("[blob]")"));
+    }
+
     // Runs a failing property with a fixed seed so the shrunk replay, and with
     // it the whole report, is deterministic.
     std::string
@@ -222,7 +232,7 @@ TEST(CloneOutput, FailureReplayIncludesCloneDraw) {
                                      std::to_string(x));
         }
     });
-    Approvals::verify(out);
+    Approvals::verify(out, scrub_blob());
 }
 
 // Verbose trace of a run that draws on the parent and then on a clone (both on

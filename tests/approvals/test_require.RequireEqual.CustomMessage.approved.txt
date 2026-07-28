@@ -1,9 +1,11 @@
 --- Failure ------------------------------------------------------------
 Falsified after 1 test case (0 discarded):
 
-  auto draw_1 = 0;
+  addition does not commute (- lhs / + rhs):
+  - 3
+  + 4
 
-Exception: std::runtime_error: intentional failure: 0
+Exception: addition does not commute
 rerun with: hegel::test(test_fn, settings, {"[blob]"})
---- rethrown: intentional failure: 0
+--- rethrown: addition does not commute
 

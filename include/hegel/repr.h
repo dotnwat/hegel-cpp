@@ -36,6 +36,28 @@ namespace hegel::internal {
     template <typename T> std::string cpp_type_name();
     template <typename T> std::string repr(const T& value);
 
+    // A rendered value, kept as a tree so a difference of two values can
+    // descend to the part that changed.
+    struct ReprNode {
+        // What names this node inside its parent: ".x = " for a struct
+        // field, empty otherwise.
+        std::string label;
+        // The value's own rendering, without the label.
+        std::string text;
+        // The opening of a composite value, up to and including its brace:
+        // "std::vector<int>{". Empty for a value with no parts.
+        std::string prefix;
+        // The parts the value is made of, empty for a value with none.
+        std::vector<ReprNode> parts;
+
+        // How the node reads inside its parent, which is what decides
+        // whether two nodes are the same part.
+        std::string full() const { return label + text; }
+        bool composite() const { return !prefix.empty(); }
+    };
+
+    template <typename T> ReprNode repr_node(const T& value);
+
     // Best-effort type name sliced from the compiler's pretty function
     // string. Used for placeholder output and for types with no clean
     // spelling of their own.
@@ -440,6 +462,65 @@ namespace hegel::internal {
         } else {
             return "<unprintable " + std::string(compiler_type_name<T>()) + ">";
         }
+    }
+
+    // Renders `value` as a tree. The parts come from the value itself and
+    // each part is rendered the same way, all the way down, so a difference
+    // of two values can descend to the part that changed. A value with no
+    // parts to descend into (a number, a string, an enum) is a leaf.
+    template <typename T> ReprNode repr_node(const T& value) {
+        ReprNode node;
+        node.text = repr(value);
+        if constexpr (repr_detail::is_vector<T>::value ||
+                      repr_detail::is_set<T>::value ||
+                      repr_detail::is_std_array<T>::value) {
+            node.prefix = cpp_type_name<T>() + "{";
+            for (const auto& element : value) {
+                node.parts.push_back(repr_node(element));
+            }
+        } else if constexpr (repr_detail::is_map<T>::value) {
+            node.prefix = cpp_type_name<T>() + "{";
+            for (const auto& entry : value) {
+                // An entry is built here rather than through repr_node,
+                // which would name the pair's type. repr() renders a map
+                // entry as a bare brace pair.
+                ReprNode item;
+                item.text =
+                    "{" + repr(entry.first) + ", " + repr(entry.second) + "}";
+                item.prefix = "{";
+                item.parts.push_back(repr_node(entry.first));
+                item.parts.push_back(repr_node(entry.second));
+                node.parts.push_back(std::move(item));
+            }
+        } else if constexpr (repr_detail::is_pair<T>::value) {
+            node.prefix = cpp_type_name<T>() + "{";
+            node.parts.push_back(repr_node(value.first));
+            node.parts.push_back(repr_node(value.second));
+        } else if constexpr (repr_detail::is_tuple<T>::value) {
+            node.prefix = cpp_type_name<T>() + "{";
+            std::apply(
+                [&node](const auto&... elements) {
+                    (node.parts.push_back(repr_node(elements)), ...);
+                },
+                value);
+        }
+#if HEGEL_HAS_REFLECTION
+        else if constexpr (repr_detail::is_reflectable<T>::value) {
+            node.prefix = cpp_type_name<T>() + "{";
+            auto view = rfl::to_view(const_cast<T&>(value));
+            view.apply([&node](const auto& field) {
+                ReprNode item = repr_node(*field.value());
+                item.label = "." + std::string(field.name()) + " = ";
+                node.parts.push_back(std::move(item));
+            });
+        }
+#endif
+        // A composite with no parts (an empty container) has nothing to
+        // descend into, so it reads as a leaf.
+        if (node.parts.empty()) {
+            node.prefix.clear();
+        }
+        return node;
     }
 
 } // namespace hegel::internal

@@ -23,7 +23,7 @@ ctest --test-dir build -R test_name
 
 ## VERY IMPORTANT: Comments
 
-- Adhere to ADS-STE100 Simplified Technical English
+- Adhere to ASD-STE100 Simplified Technical English
 - After making a change, do not describe what code was there previously and why 
 the code was changed.
 - Do not mention Hypothesis, or any other Hegel library, even when the user prompts
@@ -49,6 +49,7 @@ The library calls libhegel's C ABI (`hegel_*` functions) directly, in-process �
 2. `hegel_run_start` starts the engine on a worker thread inside libhegel.
 3. Loop `hegel_next_test_case` until it yields NULL; run the user body for each case and `hegel_mark_complete` it (VALID / INVALID / OVERRUN / INTERESTING).
 4. `hegel_run_result` reports passed / failed / errored. On failure, each counterexample blob is replayed via `hegel_test_case_from_blob` to reproduce the user's notes and the failing exception message.
+5. The replay is wrapped in a framed report: a header naming the test and its source line, a `Falsified after N test cases (M discarded):` line, the indented body of drawn values and notes, `Exception: <type>: <message>`, and a `rerun with:` line. Counting stops at the first failing case, so the number says how many cases it took to find the bug rather than how much the shrinker did. `hegel::test()` has an overload taking a `TestLocation`; `internal::test_from_macro` is what `HEGEL_TEST` expands to, and only it prints the `HEGEL_REPRODUCE_FAILURE` form of the rerun line.
 
 ### Draw path
 
@@ -64,13 +65,14 @@ Public headers in `include/hegel/`:
 - **`test_case.h`** - TestCase class with `draw()`, `assume()`, `note()` methods passed to the test callback
 - **`core.h`** - `IGenerator<T>`, `Generator<T>`, `BasicGenerator<T>` (schema + client-side parser bundle), `CompositeGenerator<T>`, `MappedGenerator<T, U>` with `map()`, `flat_map()`, `filter()` combinators
 - **`settings.h`** - `Settings`, `Database`, `Verbosity` enum
-- **`internal.h`** - The typed draw primitives (`draw_integer`, `draw_float`, `draw_boolean`, spans, collections), `SpanLabel`, and the `HegelReject` / `HegelStopTest` exceptions (internal only; users interact via `TestCase` methods)
+- **`internal.h`** - The typed draw primitives (`draw_integer`, `draw_float`, `draw_boolean`, spans, collections), `SpanLabel`, the `HegelReject` / `HegelStopTest` / `HegelRequireFailure` exceptions, and the implementations behind `HEGEL_FAIL` / `HEGEL_REQUIRE` / `HEGEL_REQUIRE_EQUAL` (internal only; users interact via `TestCase` methods and the macros)
 - **`generators/`** - Strategy factory functions in `hegel::generators` namespace, split by category: `primitives.h`, `numeric.h`, `strings.h`, `collections.h`, `combinators.h`, `formats.h`, `builds.h`, `default.h` (type-directed derivation via reflect-cpp), `random.h`
 
 Private implementation in `src/`:
 - **`engine.{h,cpp}`** - Wrappers over the libhegel C ABI: run-lifecycle helpers (`hegel::impl`), string-generator construction, and the draw-primitive implementations
 - **`test_case.{h,cpp}`** - Private `TestCaseData` struct (owns the `hegel_test_case_t*` — freed in its destructor — plus per-iteration state; the error-reporting context is per-thread via `impl::thread_context()`) and the `TestCase` method implementations, including `DrawLogScope` — each outermost `TestCase::draw` prints its composed value as a C++ declaration (`auto <name> = <value>;`, rendered by `include/hegel/repr.h`) on the final replay / at Verbose+
-- **`generators.cpp` / `hegel.cpp`** - implementations for the corresponding public headers; `hegel.cpp` also holds the `hegel::test()` run loop
+- **`require.{h,cpp}`** - What `HEGEL_FAIL` / `HEGEL_REQUIRE` / `HEGEL_REQUIRE_EQUAL` call: the failure itself and the difference the report shows for two unequal values. `repr_node` (`include/hegel/repr.h`) renders a value as a tree, and the difference walks it, matching parts with a longest common subsequence at each level and descending into a part that holds the change instead of printing it whole
+- **`generators.cpp` / `hegel.cpp`** - implementations for the corresponding public headers; `hegel.cpp` also holds the `hegel::test()` run loop and the failure report
 - **`cmake/libhegel.cmake`** - downloads/verifies/links libhegel and exposes the `hegel::libhegel` imported target; `libhegel/hegel.h` is the vendored C ABI header
 
 ### Generator Pattern

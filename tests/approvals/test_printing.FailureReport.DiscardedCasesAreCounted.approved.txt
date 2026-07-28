@@ -1,9 +1,9 @@
 --- Failure ------------------------------------------------------------
-Falsified after 2 test cases (0 discarded):
+Falsified after 1 test case (3 discarded):
 
-  auto draw_1 = 5;
+  auto draw_1 = 1;
 
-Exception: int
+Exception: std::runtime_error: boom
 rerun with: hegel::test(test_fn, settings, {"[blob]"})
---- rethrown: <non-std exception>
+--- rethrown: boom
 

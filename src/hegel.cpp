@@ -25,6 +25,7 @@
 #include <functional>
 #include <map>
 #include <memory>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <typeinfo>
@@ -69,9 +70,15 @@ namespace hegel {
             ~FailureGuard() { hegel_failure_free(ctx, failure); }
         };
 
+        // How a report prints its "rerun with:" line. The annotation form
+        // names a test defined by the HEGEL_TEST macro.
+        enum class RerunForm { Call, Annotation };
+
         struct BodyOutcome {
             hegel_status_t status;
             std::string origin;
+            // Exception type, as the report's "Exception:" line names it.
+            std::string type_name;
             std::string message;
             std::exception_ptr exception;
         };
@@ -98,14 +105,20 @@ namespace hegel {
                              TestCase& tc) {
             try {
                 test_fn(tc);
-                return {HEGEL_STATUS_VALID, "", ""};
+                return {HEGEL_STATUS_VALID, "", "", ""};
             } catch (const internal::HegelStopTest&) {
-                return {HEGEL_STATUS_OVERRUN, "", ""};
+                return {HEGEL_STATUS_OVERRUN, "", "", ""};
             } catch (const internal::HegelReject&) {
-                return {HEGEL_STATUS_INVALID, "", ""};
+                return {HEGEL_STATUS_INVALID, "", "", ""};
+            } catch (const internal::HegelRequireFailure& e) {
+                // The origin is the requirement's own call site, so two
+                // requirements that fail on different lines stay two bugs.
+                return {HEGEL_STATUS_INTERESTING, e.origin(), "", e.what(),
+                        std::current_exception()};
             } catch (const std::exception& e) {
-                return {HEGEL_STATUS_INTERESTING, demangle(typeid(e).name()),
-                        e.what(), std::current_exception()};
+                std::string type = demangle(typeid(e).name());
+                return {HEGEL_STATUS_INTERESTING, type, type, e.what(),
+                        std::current_exception()};
             } catch (...) {
                 // Only user code runs inside the try, so anything caught
                 // here is a test failure — including a foreign (non-C++)
@@ -124,7 +137,8 @@ namespace hegel {
                         "test body raised a foreign (non-C++) exception"));
                     // GCOVR_EXCL_STOP
                 }
-                return {HEGEL_STATUS_INTERESTING, origin, "", exception};
+                return {HEGEL_STATUS_INTERESTING, origin, origin, "",
+                        exception};
             }
         }
 
@@ -135,10 +149,14 @@ namespace hegel {
             impl::mark_complete(ctx, tc, outcome.status, origin);
         }
 
+        // Replays one counterexample. `in_report` wraps the replay's output in
+        // a framed report's body: it opens with a blank line and is indented.
         BodyOutcome replay_failure(hegel_context_t* ctx, hegel_settings_t* s,
                                    const char* blob, Verbosity verbosity,
                                    int64_t stateful_step_count, Mode mode,
-                                   const std::function<void(TestCase&)>& fn) {
+                                   bool in_report,
+                                   const std::function<void(TestCase&)>& fn,
+                                   bool* printed_output = nullptr) {
             hegel_test_case_t* handle = impl::test_case_from_blob(ctx, s, blob);
             // GCOVR_EXCL_START
             if (handle == nullptr) {
@@ -150,12 +168,75 @@ namespace hegel {
             // Positional init (fields: tc, is_final, verbosity) so this
             // TU stays clean under a C++17 (HEGEL_REFLECTION=OFF) build.
             TestCase tc_obj(std::unique_ptr<impl::test_case::TestCaseData>(
-                new impl::test_case::TestCaseData{handle, /*is_final=*/true,
-                                                  verbosity,
-                                                  stateful_step_count, mode}));
+                new impl::test_case::TestCaseData{
+                    handle, /*is_final=*/true, verbosity, stateful_step_count,
+                    mode, /*note_indent=*/in_report ? 1 : 0, in_report}));
             BodyOutcome outcome = run_body(fn, tc_obj);
+            if (printed_output != nullptr) {
+                *printed_output = *tc_obj.data()->printed_output;
+            }
             mark_complete(ctx, tc_obj.data()->tc, outcome);
             return outcome;
+        }
+
+        // Width the framed report's header rule is padded to.
+        constexpr size_t frame_width = 72;
+
+        void print_failure_header(const std::optional<TestLocation>& location,
+                                  uint64_t cases_run,
+                                  uint64_t cases_discarded) {
+            std::string title = "Failure";
+            if (location.has_value()) {
+                title += ": " + location->name + " (" + location->file + ":" +
+                         std::to_string(location->line) + ")";
+            }
+            std::string prefix = "--- " + title + " ";
+            size_t dashes = prefix.size() + 3 >= frame_width
+                                ? 3
+                                : frame_width - prefix.size();
+            std::fprintf(stderr, "%s%s\n", prefix.c_str(),
+                         std::string(dashes, '-').c_str());
+            std::fprintf(stderr,
+                         "Falsified after %llu test case%s (%llu discarded):\n",
+                         static_cast<unsigned long long>(cases_run),
+                         cases_run == 1 ? "" : "s",
+                         static_cast<unsigned long long>(cases_discarded));
+        }
+
+        // Closes one failure section: the exception it raised, then the line
+        // that replays it.
+        void print_failure_body(const Settings& settings,
+                                const std::optional<TestLocation>& location,
+                                RerunForm rerun_form,
+                                const BodyOutcome& outcome, const char* blob,
+                                bool printed_output) {
+            if (printed_output) {
+                std::fprintf(stderr, "\n");
+            }
+            if (outcome.type_name.empty()) {
+                std::fprintf(stderr, "Exception: %s\n",
+                             outcome.message.c_str());
+            } else if (outcome.message.empty()) {
+                std::fprintf(stderr, "Exception: %s\n",
+                             outcome.type_name.c_str());
+            } else {
+                std::fprintf(stderr, "Exception: %s: %s\n",
+                             outcome.type_name.c_str(),
+                             outcome.message.c_str());
+            }
+            if (!settings.print_blob) {
+                return;
+            }
+            if (rerun_form == RerunForm::Annotation && location.has_value()) {
+                std::fprintf(
+                    stderr, "rerun with: HEGEL_REPRODUCE_FAILURE(%s, \"%s\")\n",
+                    location->name.c_str(), blob);
+            } else {
+                std::fprintf(
+                    stderr,
+                    "rerun with: hegel::test(test_fn, settings, {\"%s\"})\n",
+                    blob);
+            }
         }
 
         // Translate hegel::Settings onto a fresh hegel_settings_t handle.
@@ -273,11 +354,14 @@ namespace hegel {
             impl::settings_set_backend(ctx, s, backend);
         }
 
+        // Replays one counterexample as the body of a failure section and
+        // closes the section with its exception and rerun line.
         BodyOutcome
         handle_failure(const std::function<void(TestCase&)>& test_fn,
                        hegel_context_t* ctx, hegel_settings_t* s,
                        const Settings& settings,
-                       const hegel_failure_t* failure) {
+                       const std::optional<TestLocation>& location,
+                       RerunForm rerun_form, const hegel_failure_t* failure) {
             const char* blob = impl::failure_reproduction_blob(ctx, failure);
             if (blob == nullptr) {
                 // GCOVR_EXCL_START
@@ -285,16 +369,19 @@ namespace hegel {
                     "internal error: failure has no reproduction blob");
                 // GCOVR_EXCL_STOP
             }
-            if (settings.verbosity != Verbosity::Quiet && settings.print_blob) {
-                std::fprintf(stderr, "Failure blob: %s\n", blob);
-            }
+            bool quiet = settings.verbosity == Verbosity::Quiet;
+            bool printed_output = false;
             BodyOutcome outcome = replay_failure(
                 ctx, s, blob, settings.verbosity, settings.stateful_step_count,
-                settings.mode, test_fn);
+                settings.mode, /*in_report=*/!quiet, test_fn, &printed_output);
             if (outcome.status != HEGEL_STATUS_INTERESTING) {
                 // GCOVR_EXCL_START
                 throw std::runtime_error(flaky_diagnostic);
                 // GCOVR_EXCL_STOP
+            }
+            if (!quiet) {
+                print_failure_body(settings, location, rerun_form, outcome,
+                                   blob, printed_output);
             }
             return outcome;
         }
@@ -307,7 +394,8 @@ namespace hegel {
             // one is run like in the other Hegel libraries
             BodyOutcome outcome = replay_failure(
                 ctx, s, failure_blobs.front().c_str(), settings.verbosity,
-                settings.stateful_step_count, settings.mode, test_fn);
+                settings.stateful_step_count, settings.mode,
+                /*in_report=*/false, test_fn);
 
             if (outcome.exception == nullptr) {
                 throw std::runtime_error(
@@ -323,10 +411,16 @@ namespace hegel {
 
         void run_from_engine(const std::function<void(TestCase&)>& test_fn,
                              hegel_context_t* ctx, hegel_settings_t* s,
-                             const Settings& settings) {
+                             const Settings& settings,
+                             const std::optional<TestLocation>& location,
+                             RerunForm rerun_form) {
             RunGuard run_guard{ctx};
             run_guard.run = impl::run_start(ctx, s);
             hegel_run_t* run = run_guard.run;
+
+            uint64_t cases_run = 0;
+            uint64_t cases_discarded = 0;
+            bool seen_interesting = false;
 
             // Generation loop: pull cases until the engine reports completion
             // (NULL test case), running, marking, and releasing each.
@@ -340,6 +434,16 @@ namespace hegel {
                         handle, /*is_final=*/false, settings.verbosity,
                         settings.stateful_step_count, settings.mode}));
                 BodyOutcome outcome = run_body(test_fn, tc_obj);
+                if (!seen_interesting) {
+                    if (outcome.status == HEGEL_STATUS_INTERESTING) {
+                        cases_run++;
+                        seen_interesting = true;
+                    } else if (outcome.status == HEGEL_STATUS_VALID) {
+                        cases_run++;
+                    } else if (outcome.status == HEGEL_STATUS_INVALID) {
+                        cases_discarded++;
+                    }
+                }
                 mark_complete(ctx, tc_obj.data()->tc, outcome);
             }
 
@@ -360,16 +464,20 @@ namespace hegel {
                 throw std::runtime_error(std::string("Hegel run error: ") +
                                          (run_err ? run_err : "unknown error"));
             }
-            // Failed: replay each distinct counterexample as its own block — a
-            // "Failure N:" header, then its notes, then its exception.
+            // Failed: one framed report, holding one section per distinct
+            // counterexample.
             size_t failure_count = impl::run_result_failure_count(ctx, result);
             bool quiet = settings.verbosity == Verbosity::Quiet;
+            if (!quiet) {
+                print_failure_header(location, cases_run, cases_discarded);
+            }
 
             if (failure_count == 1) {
                 FailureGuard failure_guard{ctx};
                 failure_guard.failure =
                     impl::run_result_failure(ctx, result, 0);
                 std::rethrow_exception(handle_failure(test_fn, ctx, s, settings,
+                                                      location, rerun_form,
                                                       failure_guard.failure)
                                            .exception);
             }
@@ -379,18 +487,13 @@ namespace hegel {
                 failure_guard.failure =
                     impl::run_result_failure(ctx, result, i);
                 if (!quiet) {
-                    std::fprintf(stderr, "Failure %zu:\n", i + 1);
+                    std::fprintf(stderr, "\nFailure %zu of %zu:\n", i + 1,
+                                 failure_count);
                 }
-                BodyOutcome outcome = handle_failure(test_fn, ctx, s, settings,
-                                                     failure_guard.failure);
-                if (!quiet && !outcome.message.empty()) {
-                    std::fprintf(
-                        stderr, "Exception %s: %s\n",
-                        impl::failure_origin(ctx, failure_guard.failure),
-                        outcome.message.c_str());
-                }
+                handle_failure(test_fn, ctx, s, settings, location, rerun_form,
+                               failure_guard.failure);
             }
-            throw std::runtime_error("\nHegel test failed with " +
+            throw std::runtime_error("Hegel test failed with " +
                                      std::to_string(failure_count) +
                                      " distinct failures");
         }
@@ -462,20 +565,47 @@ namespace hegel {
         return failed == 0 ? 0 : 1;
     }
 
+    namespace {
+        void run_test(const std::function<void(TestCase&)>& test_fn,
+                      const std::optional<TestLocation>& location,
+                      RerunForm rerun_form, const Settings& settings,
+                      const std::vector<std::string>& failure_blobs) {
+            hegel_context_t* ctx = impl::thread_context();
+
+            SettingsGuard settings_guard{ctx};
+            settings_guard.s = impl::settings_new(ctx);
+            hegel_settings_t* s = settings_guard.s;
+            apply_settings(ctx, s, settings);
+
+            if (failure_blobs.empty()) {
+                run_from_engine(test_fn, ctx, s, settings, location,
+                                rerun_form);
+            } else {
+                run_from_blob(test_fn, ctx, s, settings, failure_blobs);
+            }
+        }
+    } // namespace
+
     void test(const std::function<void(TestCase&)>& test_fn,
               const Settings& settings,
               const std::vector<std::string>& failure_blobs) {
-        hegel_context_t* ctx = impl::thread_context();
-
-        SettingsGuard settings_guard{ctx};
-        settings_guard.s = impl::settings_new(ctx);
-        hegel_settings_t* s = settings_guard.s;
-        apply_settings(ctx, s, settings);
-
-        if (failure_blobs.empty()) {
-            run_from_engine(test_fn, ctx, s, settings);
-        } else {
-            run_from_blob(test_fn, ctx, s, settings, failure_blobs);
-        }
+        run_test(test_fn, std::nullopt, RerunForm::Call, settings,
+                 failure_blobs);
     }
+
+    void test(const std::function<void(TestCase&)>& test_fn,
+              const TestLocation& location, const Settings& settings,
+              const std::vector<std::string>& failure_blobs) {
+        run_test(test_fn, location, RerunForm::Call, settings, failure_blobs);
+    }
+
+    namespace internal {
+        void test_from_macro(const std::function<void(TestCase&)>& test_fn,
+                             const TestLocation& location,
+                             const Settings& settings,
+                             const std::vector<std::string>& failure_blobs) {
+            run_test(test_fn, location, RerunForm::Annotation, settings,
+                     failure_blobs);
+        }
+    } // namespace internal
 } // namespace hegel

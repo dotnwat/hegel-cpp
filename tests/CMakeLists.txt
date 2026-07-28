@@ -132,6 +132,8 @@ hegel_add_test(NAME test_guiding SOURCE test_guiding.cpp)
 
 # Value printer for draw output.
 hegel_add_test(NAME test_repr SOURCE test_repr.cpp)
+# In-test assertions: HEGEL_REQUIRE / HEGEL_REQUIRE_EQUAL.
+hegel_add_test(NAME test_require SOURCE test_require.cpp APPROVALS)
 # Test-case cloning: clone(), spawn()/join(), and clone output approval.
 hegel_add_test(NAME test_clone SOURCE test_clone.cpp USE_UTILS APPROVALS)
 

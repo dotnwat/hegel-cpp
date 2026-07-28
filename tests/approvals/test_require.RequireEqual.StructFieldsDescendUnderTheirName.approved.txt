@@ -1,0 +1,18 @@
+--- Failure ------------------------------------------------------------
+Falsified after 1 test case (0 discarded):
+
+  HEGEL_REQUIRE_EQUAL: values differ (- lhs / + rhs):
+    Team{
+      .name = std::string("a"),
+      .scores = std::vector<int>{
+        1,
+  -     2,
+  +     9,
+        3,
+      },
+    }
+
+Exception: HEGEL_REQUIRE_EQUAL: values differ
+rerun with: hegel::test(test_fn, settings, {"[blob]"})
+--- rethrown: HEGEL_REQUIRE_EQUAL: values differ
+

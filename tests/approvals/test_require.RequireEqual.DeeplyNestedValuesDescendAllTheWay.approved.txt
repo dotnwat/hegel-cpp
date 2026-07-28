@@ -1,0 +1,19 @@
+--- Failure ------------------------------------------------------------
+Falsified after 1 test case (0 discarded):
+
+  HEGEL_REQUIRE_EQUAL: values differ (- lhs / + rhs):
+    std::vector<std::vector<std::vector<int>>>{
+      std::vector<std::vector<int>>{std::vector<int>{1, 2}},
+      std::vector<std::vector<int>>{
+        std::vector<int>{
+          3,
+  -       4,
+  +       9,
+        },
+      },
+    }
+
+Exception: HEGEL_REQUIRE_EQUAL: values differ
+rerun with: hegel::test(test_fn, settings, {"[blob]"})
+--- rethrown: HEGEL_REQUIRE_EQUAL: values differ
+

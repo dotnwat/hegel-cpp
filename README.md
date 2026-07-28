@@ -78,13 +78,30 @@ failures found in one run are replayed first in the next. (You can also call
 This test will fail! Hegel will produce a minimal failing test case for us:
 
 ```
-auto vec1 = std::vector<int>{0, 0};
-libc++abi: terminating due to uncaught exception of type std::runtime_error: sort mismatch
+--- Failure: sort_agrees_with_std_sort (sort_test.cpp:9) ----------------
+Falsified after 8 test cases (0 discarded):
+
+  auto vec1 = std::vector<int>{0, 0};
+
+Exception: std::runtime_error: sort mismatch
+rerun with: HEGEL_REPRODUCE_FAILURE(sort_agrees_with_std_sort, "AXicY2VgYGBkZOBiZEBhMAAAAd8AIQ==")
 ```
 
-Each draw is replayed and printed as a C++ declaration. The `HEGEL_DRAW` draw macros binds the value and records the
-variable's name for that output. Plain `tc.draw(gen)` works anywhere a
-macro doesn't fit and prints numbered placeholders (`auto draw_1 = ...;`);
-`tc.draw("vec1", gen)` names one explicitly.
+The report names the test and its source line, says how many cases it took
+to find the failure, and shows the minimal example.
 
-Hegel reports the minimal example showing that our sort is incorrectly dropping duplicates.
+Each draw is replayed and printed as a C++ declaration. The `HEGEL_DRAW`
+macro binds the value and records the variable's name for that output. Plain
+`tc.draw(gen)` works anywhere a macro doesn't fit and prints numbered
+placeholders (`auto draw_1 = ...;`); `tc.draw("vec1", gen)` names one
+explicitly.
+
+The last line replays this exact failure. Put it above the test to rerun the
+counterexample instead of generating new cases:
+
+```cpp
+HEGEL_REPRODUCE_FAILURE(sort_agrees_with_std_sort, "AXicY2VgYGBkZOBiZEBhMAAAAd8AIQ==")
+HEGEL_TEST(sort_agrees_with_std_sort)(hegel::TestCase& tc) {
+    // ...
+}
+```

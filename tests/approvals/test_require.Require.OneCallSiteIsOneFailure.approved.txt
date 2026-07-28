@@ -1,9 +1,9 @@
 --- Failure ------------------------------------------------------------
-Falsified after 2 test cases (0 discarded):
+Falsified after 6 test cases (0 discarded):
 
-  auto draw_1 = 5;
+  auto x = 60;
 
-Exception: int
+Exception: too big
 rerun with: hegel::test(test_fn, settings, {"[blob]"})
---- rethrown: <non-std exception>
+--- rethrown: too big
 

@@ -1,9 +1,13 @@
 --- Failure ------------------------------------------------------------
 Falsified after 2 test cases (0 discarded):
 
-  auto draw_1 = 10;
+  state = 0
+  Step 1: add
+    auto amount = 3;
+  state = 3
+  Step 2: add
+    auto amount = 9;
 
-Exception: std::runtime_error: clone failure with x=10
+Exception: std::runtime_error: counter overflowed
 rerun with: hegel::test(test_fn, settings, {"[blob]"})
---- rethrown: clone failure with x=10
 

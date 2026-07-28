@@ -1,9 +1,6 @@
 --- Failure ------------------------------------------------------------
 Falsified after 1 test case (0 discarded):
-
-  auto draw_1 = 0;
-
-Exception: std::runtime_error: intentional failure: 0
+Exception: HEGEL_REQUIRE: condition was false
 rerun with: hegel::test(test_fn, settings, {"[blob]"})
---- rethrown: intentional failure: 0
+--- rethrown: HEGEL_REQUIRE: condition was false
 

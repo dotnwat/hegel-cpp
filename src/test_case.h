@@ -9,6 +9,7 @@
 
 #include <cstddef>
 #include <map>
+#include <memory>
 #include <set>
 #include <string>
 
@@ -24,6 +25,12 @@ namespace hegel::impl::test_case {
         int64_t stateful_step_count;
         Mode mode;
         int note_indent = 0;
+        // True while this case's output forms the body of a framed failure
+        // report: the body opens with a blank line and sits at note_indent.
+        bool in_report = false;
+        // Whether any note or drawn value has printed. Shared with clones,
+        // which print into the same body.
+        std::shared_ptr<bool> printed_output = std::make_shared<bool>(false);
         int draw_depth = 0;
         std::map<std::string, int> draw_name_counts;
         std::set<std::string> taken_display_names;

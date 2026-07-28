@@ -1,3 +1,5 @@
+#include <regex>
+
 #include <gtest/gtest.h>
 #include <hegel/hegel.h>
 
@@ -6,6 +8,17 @@
 namespace gs = hegel::generators;
 
 using ApprovalTests::Approvals;
+
+namespace {
+    // A reproduction blob encodes engine internals and changes with the
+    // engine version, so the snapshots pin the report layout around a
+    // placeholder instead of the payload.
+    ApprovalTests::Options scrub_blob() {
+        return ApprovalTests::Options(
+            ApprovalTests::Scrubbers::createRegexScrubber(
+                std::regex(R"("[A-Za-z0-9+/=]{8,}")"), R"("[blob]")"));
+    }
+} // namespace
 
 TEST(Pools, PoolsRoundTrip) {
     hegel::test([](hegel::TestCase& tc) {
@@ -55,8 +68,8 @@ TEST(Pools, DrawFromEmptyPool) {
 }
 
 namespace {
-    struct Stack : hegel::stateful::StateMachine<Stack> {
-        std::vector<int> state;
+    struct Stack : hegel::stateful::StateMachine<Stack, std::vector<int>> {
+        Stack() : StateMachine({.initial_state = {}}) {}
         std::vector<hegel::stateful::Rule<Stack>> rules() {
             return {
                 hegel::stateful::Rule<Stack>("push",
@@ -73,45 +86,50 @@ namespace {
         }
     };
 
-    struct Empty : hegel::stateful::StateMachine<Empty> {
+    struct Empty : hegel::stateful::StateMachine<Empty, int> {
+        Empty() : StateMachine({.initial_state = 0}) {}
         std::vector<hegel::stateful::Rule<Empty>> rules() { return {}; }
     };
 
-    struct BoundedCounter : hegel::stateful::StateMachine<BoundedCounter> {
-        int s = 0;
+    struct BoundedCounter : hegel::stateful::StateMachine<BoundedCounter, int> {
+        BoundedCounter() : StateMachine({.initial_state = 0}) {}
         std::vector<hegel::stateful::Rule<BoundedCounter>> rules() {
             return {hegel::stateful::Rule<BoundedCounter>(
-                "inc", [](hegel::TestCase&, BoundedCounter& m) { m.s += 1; })};
+                "inc",
+                [](hegel::TestCase&, BoundedCounter& m) { m.state += 1; })};
         }
         std::vector<hegel::stateful::Invariant<BoundedCounter>> invariants() {
             return {hegel::stateful::Invariant<BoundedCounter>(
                 "bounded", [](const BoundedCounter& m) {
-                    if (m.s >= 2) {
+                    if (m.state >= 2) {
                         throw std::runtime_error("bound violated");
                     }
                 })};
         }
     };
 
-    struct StoppingCounter : hegel::stateful::StateMachine<StoppingCounter> {
-        int s = 0;
+    struct StoppingCounter
+        : hegel::stateful::StateMachine<StoppingCounter, int> {
+        StoppingCounter() : StateMachine({.initial_state = 0}) {}
         std::vector<hegel::stateful::Rule<StoppingCounter>> rules() {
             return {hegel::stateful::Rule<StoppingCounter>(
                 "inc", [](hegel::TestCase&, StoppingCounter& m) {
-                    m.s += 1;
-                    if (m.s >= 100) {
+                    m.state += 1;
+                    if (m.state >= 100) {
                         throw std::runtime_error("done");
                     }
                 })};
         }
     };
 
-    struct Allocator : hegel::stateful::StateMachine<Allocator> {
-        std::set<int> live;
+    // The live set is the state. The pool is a member instead: it is tied to
+    // a test case, and can be neither copied nor rendered.
+    struct Allocator : hegel::stateful::StateMachine<Allocator, std::set<int>> {
         hegel::stateful::Pool<int> handles;
         int next_handle = 0;
 
-        explicit Allocator(hegel::TestCase& tc) : handles(tc) {}
+        explicit Allocator(hegel::TestCase& tc)
+            : StateMachine({.initial_state = {}}), handles(tc) {}
 
         std::vector<hegel::stateful::Rule<Allocator>> rules() {
             return {
@@ -120,37 +138,73 @@ namespace {
                     [](hegel::TestCase&, Allocator& m) {
                         int h = m.next_handle++;
                         m.handles.add(h);
-                        m.live.insert(h);
+                        m.state.insert(h);
                     }),
                 hegel::stateful::Rule<Allocator>(
                     "free",
                     [](hegel::TestCase& tc, Allocator& m) {
                         int h = tc.draw(
                             hegel::stateful::values_consumed(m.handles));
-                        m.live.erase(h);
+                        m.state.erase(h);
                     }),
             };
         }
         std::vector<hegel::stateful::Invariant<Allocator>> invariants() {
             return {hegel::stateful::Invariant<Allocator>(
                 "sizes_agree", [](const Allocator& m) {
-                    if (m.handles.size() != m.live.size()) {
+                    if (m.handles.size() != m.state.size()) {
                         throw std::runtime_error("pool and live set diverged");
                     }
                 })};
         }
     };
 
-    struct Adder : hegel::stateful::StateMachine<Adder> {
-        int s = 0;
+    struct Adder : hegel::stateful::StateMachine<Adder, int> {
+        Adder() : StateMachine({.initial_state = 0}) {}
         std::vector<hegel::stateful::Rule<Adder>> rules() {
-            return {hegel::stateful::Rule<Adder>("step", [](hegel::TestCase& tc,
-                                                            Adder& m) {
-                m.s += tc.draw("amount", gs::integers<int>(
-                                             {.min_value = 1, .max_value = 9}));
-            })};
+            return {hegel::stateful::Rule<Adder>(
+                "step", [](hegel::TestCase& tc, Adder& m) {
+                    m.state += tc.draw(
+                        "amount",
+                        gs::integers<int>({.min_value = 1, .max_value = 9}));
+                })};
         }
     };
+
+    // Overflows at 12, so a failing sequence is short enough to read whole.
+    struct Counter : hegel::stateful::StateMachine<Counter, int> {
+        Counter() : StateMachine({.initial_state = 0}) {}
+        std::vector<hegel::stateful::Rule<Counter>> rules() {
+            return {hegel::stateful::Rule<Counter>(
+                "add", [](hegel::TestCase& tc, Counter& m) {
+                    m.state += tc.draw(
+                        "amount",
+                        gs::integers<int>({.min_value = 1, .max_value = 9}));
+                    if (m.state >= 12) {
+                        throw std::runtime_error("counter overflowed");
+                    }
+                })};
+        }
+    };
+
+    std::string
+    capture_counter_failure(hegel::stateful::RunParams params = {}) {
+        testing::internal::CaptureStderr();
+        try {
+            hegel::test(
+                [params](hegel::TestCase& tc) {
+                    Counter machine;
+                    hegel::stateful::run(machine, tc, params);
+                },
+                hegel::Settings{.seed = 1,
+                                .derandomize = false,
+                                .database = hegel::Database::disabled(),
+                                .stateful_step_count = 5});
+        } catch (const std::exception&) { // NOLINT(bugprone-empty-catch)
+            // The report is what this asserts on; the re-raise is not.
+        }
+        return testing::internal::GetCapturedStderr();
+    }
 } // namespace
 
 TEST(Stateful, BasicRun) {
@@ -194,7 +248,7 @@ TEST(Stateful, PoolAsState) {
     });
 }
 
-TEST(Stateful, TraceNestsDrawsAndHidesStopDecision) {
+TEST(Stateful, VerboseNestsDrawsAndHidesStopDecision) {
     testing::internal::CaptureStderr();
     hegel::test(
         [](hegel::TestCase& tc) {
@@ -208,33 +262,18 @@ TEST(Stateful, TraceNestsDrawsAndHidesStopDecision) {
                         .database = hegel::Database::disabled(),
                         .stateful_step_count = 3});
     std::string out = testing::internal::GetCapturedStderr();
-    Approvals::verify(out);
+    Approvals::verify(out, scrub_blob());
 }
 
-TEST(Stateful, CounterexamplePrintsRuleDraws) {
-    struct Overflowing : hegel::stateful::StateMachine<Overflowing> {
-        int s = 0;
-        std::vector<hegel::stateful::Rule<Overflowing>> rules() {
-            return {hegel::stateful::Rule<Overflowing>(
-                "add", [](hegel::TestCase& tc, Overflowing& m) {
-                    m.s += tc.draw(
-                        "amount",
-                        gs::integers<int>({.min_value = 1, .max_value = 9}));
-                    if (m.s >= 12) {
-                        throw std::runtime_error("accumulator overflowed");
-                    }
-                })};
-        }
-    };
-    testing::internal::CaptureStderr();
-    EXPECT_THROW(hegel::test(
-                     [](hegel::TestCase& tc) {
-                         Overflowing machine;
-                         hegel::stateful::run(machine, tc);
-                     },
-                     hegel::Settings{.database = hegel::Database::disabled(),
-                                     .stateful_step_count = 5}),
-                 std::runtime_error);
-    std::string out = testing::internal::GetCapturedStderr();
-    Approvals::verify(out);
+// The state prints before the first step and after every step that runs to
+// completion, so a failing sequence shows what led to the failure. A step
+// that throws prints no state, leaving the last state before the exception
+// as the one the failing step started from.
+TEST(Stateful, StatePrintingIsOnByDefault) {
+    Approvals::verify(capture_counter_failure(), scrub_blob());
+}
+
+TEST(Stateful, StatePrintingCanBeDisabled) {
+    Approvals::verify(capture_counter_failure({.print_state = false}),
+                      scrub_blob());
 }

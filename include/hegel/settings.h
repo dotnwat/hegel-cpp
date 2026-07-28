@@ -215,9 +215,10 @@ namespace hegel {
         /// default), stop the run at the first failing example.
         bool report_multiple_failures = false;
 
-        /// If true, print the base64 blob encoding the engine choices that led
-        /// to a failure.
-        bool print_blob = false;
+        /// If true (the default), a failure report ends with a
+        /// `rerun with:` line holding the base64 blob that replays the
+        /// failure.
+        bool print_blob = true;
 
         /// Configure the Hegel database. See Database. Defaults to a database
         /// at `.hegel`, or disabled when a CI environment is detected.
