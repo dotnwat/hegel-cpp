@@ -164,7 +164,8 @@ namespace hegel::internal {
     // holds the change is descended into rather than printed whole.
     std::string render_node_diff(const ReprNode& left, const ReprNode& right);
 
-    [[noreturn]] void fail_require(const char* origin, std::string message);
+    [[noreturn]] void fail_require(const char* origin,
+                                   const std::string& message);
 
     // Implementation of HEGEL_FAIL. `origin` is the macro's call site.
     [[noreturn]] inline void
@@ -207,7 +208,7 @@ namespace hegel::internal {
             tc.note(text + " (- lhs / + rhs):\n" +
                     render_node_diff(repr_node(left), repr_node(right)));
         }
-        fail_require(origin, std::move(text));
+        fail_require(origin, text);
     }
 
 } // namespace hegel::internal

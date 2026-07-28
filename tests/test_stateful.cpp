@@ -248,7 +248,7 @@ TEST(Stateful, PoolAsState) {
     });
 }
 
-TEST(Stateful, TraceNestsDrawsAndHidesStopDecision) {
+TEST(Stateful, VerboseNestsDrawsAndHidesStopDecision) {
     testing::internal::CaptureStderr();
     hegel::test(
         [](hegel::TestCase& tc) {
@@ -269,11 +269,11 @@ TEST(Stateful, TraceNestsDrawsAndHidesStopDecision) {
 // completion, so a failing sequence shows what led to the failure. A step
 // that throws prints no state, leaving the last state before the exception
 // as the one the failing step started from.
-TEST(Stateful, StateTraceIsOnByDefault) {
+TEST(Stateful, StatePrintingIsOnByDefault) {
     Approvals::verify(capture_counter_failure(), scrub_blob());
 }
 
-TEST(Stateful, StateTraceCanBeDisabled) {
+TEST(Stateful, StatePrintingCanBeDisabled) {
     Approvals::verify(capture_counter_failure({.print_state = false}),
                       scrub_blob());
 }

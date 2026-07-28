@@ -422,7 +422,7 @@ namespace hegel::stateful {
             : state(std::move(params.initial_state)) {}
 
         /// The state the rules act on. Rules mutate it in place, and a
-        /// failing run traces it. See RunParams::print_state.
+        /// failing run prints it. See RunParams::print_state.
         State state;
 
         /**

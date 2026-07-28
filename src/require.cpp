@@ -5,13 +5,14 @@
 #include <hegel/internal.h>
 #include <hegel/test_case.h>
 
+#include <hegel/repr.h>
+
 #include <require.h>
 #include <test_case.h>
 
 #include <algorithm>
 #include <cstddef>
 #include <string>
-#include <utility>
 #include <vector>
 
 namespace hegel::impl::require {
@@ -154,8 +155,8 @@ namespace hegel::internal {
         return out;
     }
 
-    void fail_require(const char* origin, std::string message) {
-        throw HegelRequireFailure(origin, std::move(message));
+    void fail_require(const char* origin, const std::string& message) {
+        throw HegelRequireFailure(origin, message);
     }
 
 } // namespace hegel::internal

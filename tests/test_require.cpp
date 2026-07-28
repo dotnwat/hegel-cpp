@@ -209,12 +209,21 @@ TEST(RequireEqual, MapsDiffPerEntry) {
     Approvals::verify(out, scrub_blob());
 }
 
+// These sit at file scope because repr() reads a type's name out of
+// __PRETTY_FUNCTION__, and a type declared inside a function is named
+// differently by GCC and by Clang.
+struct Point {
+    int x;
+    int y;
+};
+
+struct Team {
+    std::string name;
+    std::vector<int> scores;
+};
+
 // A struct diffs by field.
 TEST(RequireEqual, StructsDiffPerField) {
-    struct Point {
-        int x;
-        int y;
-    };
     std::string out = capture([](hegel::TestCase& tc) {
         Point lhs{1, 2};
         Point rhs{1, 9};
@@ -258,10 +267,6 @@ TEST(RequireEqual, DeeplyNestedValuesDescendAllTheWay) {
 // A field naming a composite keeps its name on the line that opens the
 // descent.
 TEST(RequireEqual, StructFieldsDescendUnderTheirName) {
-    struct Team {
-        std::string name;
-        std::vector<int> scores;
-    };
     std::string out = capture([](hegel::TestCase& tc) {
         Team lhs{"a", {1, 2, 3}};
         Team rhs{"a", {1, 9, 3}};

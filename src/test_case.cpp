@@ -6,6 +6,7 @@
 
 #include <hegel.h>
 
+#include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <iostream>
