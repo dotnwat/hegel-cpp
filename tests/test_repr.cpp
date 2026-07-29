@@ -496,3 +496,44 @@ TEST(ReprProperty, VectorRoundTrip) {
         ASSERT_EQ(parsed, v);
     });
 }
+
+// is_renderable_v names the same set of types repr() has a rendering for.
+// The trait restates repr()'s branch conditions, so this pins the two
+// together: a type repr() renders must satisfy the trait, and one it falls
+// back on must not.
+namespace {
+    struct NoRendering {
+        NoRendering() = default;
+
+      private:
+        int hidden_ = 0;
+    };
+
+    template <typename T> bool falls_back() {
+        return hegel::internal::repr(T{}).rfind("<unprintable", 0) == 0;
+    }
+
+    template <typename T> void check_agrees(const char* name) {
+        EXPECT_EQ(hegel::internal::is_renderable_v<T>, !falls_back<T>())
+            << "is_renderable_v disagrees with repr() for " << name;
+    }
+} // namespace
+
+TEST(ReprRenderable, MatchesWhatReprProduces) {
+    check_agrees<int>("int");
+    check_agrees<double>("double");
+    check_agrees<bool>("bool");
+    check_agrees<std::string>("std::string");
+    check_agrees<std::vector<int>>("std::vector<int>");
+    check_agrees<std::set<int>>("std::set<int>");
+    check_agrees<std::map<int, int>>("std::map<int, int>");
+    check_agrees<std::optional<int>>("std::optional<int>");
+    check_agrees<std::pair<int, int>>("std::pair<int, int>");
+    check_agrees<std::tuple<int, int>>("std::tuple<int, int>");
+    check_agrees<std::array<int, 2>>("std::array<int, 2>");
+    check_agrees<NoRendering>("NoRendering");
+
+    // The one that matters: no rendering means the trait says no.
+    EXPECT_FALSE(hegel::internal::is_renderable_v<NoRendering>);
+    EXPECT_TRUE(hegel::internal::is_renderable_v<int>);
+}

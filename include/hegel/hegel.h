@@ -226,6 +226,11 @@
  * The report shows a difference of the two values, down to the part that
  * changed, rather than only reporting that they differ.
  *
+ * The two values must have the same type, and Hegel must be able to render
+ * that type. A type of your own that is not an aggregate struct needs an
+ * @c operator<< for a @c std::ostream, or the test does not compile. See
+ * @ref HEGEL_REQUIRE_EQUAL for the types Hegel renders on its own.
+ *
  * @ref HEGEL_REQUIRE states a condition, with a message the report prints:
  *
  * @code{.cpp}
@@ -668,6 +673,47 @@ namespace hegel {
  * @endcode
  *
  * The values are compared as Hegel renders them for the report.
+ *
+ * Hegel must also be able to render the type. A type it cannot render does
+ * not compile:
+ *
+ * @code{.txt}
+ * error: static assertion failed: HEGEL_REQUIRE_EQUAL needs a type Hegel can
+ * render. Give it an operator<<, or compare its parts instead.
+ * @endcode
+ *
+ * Hegel renders these types on its own:
+ *
+ * - the arithmetic types (@c bool, the character types, the integer types,
+ *   the floating-point types) and enumerations
+ * - @c std::string
+ * - @c std::optional, @c std::pair, @c std::tuple, @c std::variant and
+ *   @c std::monostate
+ * - @c std::vector, @c std::set, @c std::map and @c std::array
+ * - any nesting of the types above
+ * - aggregate structs, through reflection. This needs a build with
+ *   `HEGEL_REFLECTION` on, which is the default. Without reflection an
+ *   aggregate struct is subject to the rule below.
+ *
+ * A type that is not in that list needs an @c operator<< that writes it to a
+ * @c std::ostream:
+ *
+ * @code{.cpp}
+ * class Point {
+ *   public:
+ *     Point(int x, int y) : x_(x), y_(y) {}
+ *
+ *     friend std::ostream& operator<<(std::ostream& os, const Point& p) {
+ *         return os << "Point(" << p.x_ << ", " << p.y_ << ")";
+ *     }
+ *
+ *   private:
+ *     int x_;
+ *     int y_;
+ * };
+ * @endcode
+ *
+ * Where a type cannot get an @c operator<<, compare its parts instead.
  *
  * @param tc The current hegel::TestCase.
  * @param ... The two values to compare and an optional message.

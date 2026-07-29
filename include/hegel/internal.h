@@ -9,6 +9,7 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -188,15 +189,18 @@ namespace hegel::internal {
     }
 
     // Implementation of HEGEL_REQUIRE_EQUAL. The two values are compared as
-    // repr() renders them, so neither needs an operator==. That rendering is
-    // the comparison, so it happens on every call.
+    // repr() renders them.
     template <typename T>
     void require_equal_impl(
         const TestCase& tc, const char* origin, const T& left, const T& right,
         std::string_view message = "HEGEL_REQUIRE_EQUAL: values differ") {
-        std::string left_repr = repr(left);
-        std::string right_repr = repr(right);
-        if (left_repr == right_repr) {
+        // repr() gives unrenderable types the same "<unprintable T>" text for
+        // every value, which would make all values of the type equal to each
+        // other.
+        static_assert(is_renderable_v<T>,
+                      "HEGEL_REQUIRE_EQUAL needs a type Hegel can render. "
+                      "Give it an operator<<, or compare its parts instead.");
+        if (repr(left) == repr(right)) {
             return;
         }
         std::string text(message);
