@@ -188,12 +188,15 @@ namespace hegel::internal {
         }
     }
 
-    // Implementation of HEGEL_REQUIRE_EQUAL. The values are compared with
-    // operator==, and rendered only to describe a failure.
+    // Implementation of HEGEL_REQUIRE_EQUAL. The two values are compared as
+    // repr() renders them.
     template <typename T>
     void require_equal_impl(
         const TestCase& tc, const char* origin, const T& left, const T& right,
         std::string_view message = "HEGEL_REQUIRE_EQUAL: values differ") {
+        // repr() gives unrenderable types the same "<unprintable T>" text for
+        // every value, which would make all values of the type equal to each
+        // other.
         static_assert(is_renderable_v<T>,
                       "HEGEL_REQUIRE_EQUAL needs a type Hegel can render. "
                       "Give it an operator<<, or compare its parts instead.");
