@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.10.0 - 2026-07-29
+
+This release requires the values `HEGEL_REQUIRE_EQUAL` compares to be ones
+Hegel can render or to have an `operator<<`, and fixes a bug where two
+unrenderable values were always recognized as equal.
+
 ## 0.9.0 - 2026-07-28
 
 This release overhauls what Hegel prints when a property fails, adds three
