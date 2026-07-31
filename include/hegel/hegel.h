@@ -211,33 +211,16 @@
  *
  * @subsection checking_properties Check properties
  *
- * Hegel has three macros for stating what must hold.
- *
- * @ref HEGEL_REQUIRE_EQUAL states that two values are equal:
- *
- * @code{.cpp}
- * HEGEL_TEST(addition_commutes)(hegel::TestCase& tc) {
- *     HEGEL_DRAW(tc, x, gs::integers<int>());
- *     HEGEL_DRAW(tc, y, gs::integers<int>());
- *     HEGEL_REQUIRE_EQUAL(tc, x + y, y + x);
- * }
- * @endcode
- *
- * The report shows a difference of the two values, down to the part that
- * changed, rather than only reporting that they differ.
- *
- * The two values must have the same type, and Hegel must be able to render
- * that type. A type of your own that is not an aggregate struct needs an
- * @c operator<< for a @c std::ostream, or the test does not compile. See
- * @ref HEGEL_REQUIRE_EQUAL for the types Hegel renders on its own.
- *
- * @ref HEGEL_REQUIRE states a condition, with a message the report prints:
+ * A test body states what must hold by throwing when it does not. Any
+ * exception fails the test case, and Hegel then shrinks the values that
+ * caused it:
  *
  * @code{.cpp}
  * HEGEL_TEST(running_sum_stays_positive)(hegel::TestCase& tc) {
  *     HEGEL_DRAW(tc, l, gs::vectors(gs::integers<int>()));
- *     HEGEL_REQUIRE(tc, lowest_running_sum(l) >= 0,
- *                   "running sum went negative");
+ *     if (lowest_running_sum(l) < 0) {
+ *         throw std::runtime_error("running sum went negative");
+ *     }
  * }
  * @endcode
  *
@@ -247,45 +230,21 @@
  *
  *   auto l = std::vector<int>{-1};
  *
- * Exception: running sum went negative
+ * Exception: std::runtime_error: running sum went negative
  * rerun with: HEGEL_REPRODUCE_FAILURE(running_sum_stays_positive,
  * "AAMAAAABAQAKAQAAAP8BAA==")
  * @endcode
  *
- * @ref HEGEL_FAIL fails outright, where there is no condition to write, such as
- * an unreachable branch, or a step that cannot go on:
+ * The assertion macros of a test framework work too, as long as they leave
+ * the body by throwing. A GoogleTest @c ASSERT_* only returns from the body,
+ * which Hegel reads as a passing case, so set @c gtest_throw_on_failure to
+ * make a failed assertion raise instead.
  *
- * @code{.cpp}
- * HEGEL_TEST(parses_its_own_output)(hegel::TestCase& tc) {
- *     HEGEL_DRAW(tc, n, gs::integers<int>({.min_value = 0}));
- *     std::optional<int> parsed = parse(render(n));
- *     if (!parsed) {
- *         HEGEL_FAIL(tc, "rendered value did not parse back");
- *     }
- *     HEGEL_REQUIRE_EQUAL(tc, *parsed, n);
- * }
- * @endcode
- *
- * @code{.txt}
- * --- Failure: parses_its_own_output (my_test.cpp:23) --------------------
- * Falsified after 2 test cases (0 discarded):
- *
- *   auto n = 1000;
- *
- * Exception: rendered value did not parse back
- * rerun with: HEGEL_REPRODUCE_FAILURE(parses_its_own_output,
- * "AAEAAAAACgIAAADoAw==")
- * @endcode
- *
- * @ref HEGEL_FAIL does not return, so the branch above needs no value and
- * the code after it may use @c parsed.
- *
- * Prefer these macros over a raw @c throw. Hegel groups counterexamples by
- * origin to tell one bug from another, and a raw throw carries no source
- * position. Every throw of one type therefore shares an origin and reports as a
- * single bug. Each of invocation of these macros count as a different origin,
- * so failures on different lines stay distinct under
- * Settings::report_multiple_failures.
+ * Hegel groups counterexamples by origin to tell one bug from another, and
+ * the origin of a thrown exception is its type. Two properties that fail with
+ * the same exception type therefore report as one bug under
+ * Settings::report_multiple_failures. Throw a distinct type per property to
+ * keep them apart.
  *
  * @subsection debug_failing Debug your failing test cases
  *
@@ -298,7 +257,9 @@
  *     HEGEL_DRAW(tc, y, gs::integers<int>());
  *     tc.note("x + y = " + std::to_string(x + y) +
  *             ", y + x = " + std::to_string(y + x));
- *     HEGEL_REQUIRE_EQUAL(tc, x + y, y + x);
+ *     if (x + y != y + x) {
+ *         throw std::runtime_error("addition is not commutative");
+ *     }
  * }
  * @endcode
  *
@@ -574,153 +535,6 @@ namespace hegel {
  * @param ... The generator expression to draw from.
  */
 #define HEGEL_DRAW(tc, var, ...) auto var = (tc).draw(#var, (__VA_ARGS__))
-
-/// @cond INTERNAL
-// Stringification takes two steps because `#` reads its argument before any
-// macro in it expands. `HEGEL_INTERNAL_STRINGIFY_(__LINE__)` alone therefore
-// gives "__LINE__". Passing the argument through a macro that does not apply
-// `#` expands it first, so the second macro stringifies the line number.
-#define HEGEL_INTERNAL_STRINGIFY_(x) #x
-#define HEGEL_INTERNAL_STRINGIFY(x) HEGEL_INTERNAL_STRINGIFY_(x)
-
-// The call site, which the engine uses to tell one requirement from another.
-// The three parts join into one string literal at compile time.
-//
-// `#` applies only to a parameter of a macro that takes parameters, so this
-// macro cannot stringify __LINE__ itself. A bare `#__LINE__` here leaves the
-// `#` in the token stream and fails to compile.
-#define HEGEL_INTERNAL_ORIGIN __FILE__ ":" HEGEL_INTERNAL_STRINGIFY(__LINE__)
-/// @endcond
-
-/**
- * @brief Fail the current test case with @p message.
- *
- * @code{.cpp}
- * HEGEL_TEST(parser_accepts_its_own_output)(hegel::TestCase& tc) {
- *     HEGEL_DRAW(tc, doc, document_generator());
- *     auto reparsed = parse(render(doc));
- *     if (!reparsed) {
- *         HEGEL_FAIL(tc, "rendered document did not parse back");
- *     }
- * }
- * @endcode
- *
- * The macro does not return.
- *
- * Prefer this over a raw @c throw. Hegel groups counterexamples by origin to
- * tell one bug from another, and a raw throw carries no source position. Every
- * throw of one type therefore shares an origin and reports as a single bug.
- * Each @c HEGEL_FAIL counts as a different origin, so failures on different
- * lines stay distinct under Settings::report_multiple_failures.
- *
- * @param tc The current hegel::TestCase.
- * @param ... The optional failure message. Without one the report reads
- *            `fail: test case failed`.
- */
-// The message is taken as trailing arguments rather than as one named
-// parameter so that it may hold a comma the preprocessor would otherwise
-// split on, as in a template argument list. __VA_ARGS__ puts those commas
-// back. __VA_OPT__ drops the comma before it when no message is given, which
-// is what makes the message optional.
-#define HEGEL_FAIL(tc, ...)                                                    \
-    ::hegel::internal::fail_impl((tc), HEGEL_INTERNAL_ORIGIN __VA_OPT__(, )    \
-                                           __VA_ARGS__)
-
-/**
- * @brief Fail the current test case unless @p condition holds.
- *
- * @code{.cpp}
- * HEGEL_TEST(sum_stays_positive)(hegel::TestCase& tc) {
- *     HEGEL_DRAW(tc, l, gs::vectors(gs::integers<int>({.min_value = 0})));
- *     HEGEL_REQUIRE(tc, running_sum(l) >= 0, "sum must stay non-negative");
- * }
- * @endcode
- *
- * The report prints the message in its `Exception:` line. Without one it
- * reads `require: condition was false`.
- *
- * @param tc The current hegel::TestCase.
- * @param ... The condition, and an optional message.
- */
-#define HEGEL_REQUIRE(tc, ...)                                                 \
-    ::hegel::internal::require_impl((tc), HEGEL_INTERNAL_ORIGIN, __VA_ARGS__)
-
-/**
- * @brief Fail the current test case unless two values are equal.
- *
- * @code{.cpp}
- * HEGEL_TEST(addition_commutes)(hegel::TestCase& tc) {
- *     HEGEL_DRAW(tc, x, gs::integers<int>());
- *     HEGEL_DRAW(tc, y, gs::integers<int>());
- *     HEGEL_REQUIRE_EQUAL(tc, x + y, y + x);
- * }
- * @endcode
- *
- * Prefer this over @ref HEGEL_REQUIRE for an equality property. The report
- * says how the two values differ.
- *
- * @code{.txt}
- * require_equal: values differ (- lhs / + rhs):
- *   Team{
- *     .name = std::string("a"),
- *     .scores = std::vector<int>{
- *       1,
- * -     2,
- * +     9,
- *       3,
- *     },
- *   }
- * @endcode
- *
- * The values are compared as Hegel renders them for the report.
- *
- * Hegel must also be able to render the type. A type it cannot render does
- * not compile:
- *
- * @code{.txt}
- * error: static assertion failed: HEGEL_REQUIRE_EQUAL needs a type Hegel can
- * render. Give it an operator<<, or compare its parts instead.
- * @endcode
- *
- * Hegel renders these types on its own:
- *
- * - the arithmetic types (@c bool, the character types, the integer types,
- *   the floating-point types) and enumerations
- * - @c std::string
- * - @c std::optional, @c std::pair, @c std::tuple, @c std::variant and
- *   @c std::monostate
- * - @c std::vector, @c std::set, @c std::map and @c std::array
- * - any nesting of the types above
- * - aggregate structs, through reflection. This needs a build with
- *   `HEGEL_REFLECTION` on, which is the default. Without reflection an
- *   aggregate struct is subject to the rule below.
- *
- * A type that is not in that list needs an @c operator<< that writes it to a
- * @c std::ostream:
- *
- * @code{.cpp}
- * class Point {
- *   public:
- *     Point(int x, int y) : x_(x), y_(y) {}
- *
- *     friend std::ostream& operator<<(std::ostream& os, const Point& p) {
- *         return os << "Point(" << p.x_ << ", " << p.y_ << ")";
- *     }
- *
- *   private:
- *     int x_;
- *     int y_;
- * };
- * @endcode
- *
- * Where a type cannot get an @c operator<<, compare its parts instead.
- *
- * @param tc The current hegel::TestCase.
- * @param ... The two values to compare and an optional message.
- */
-#define HEGEL_REQUIRE_EQUAL(tc, ...)                                           \
-    ::hegel::internal::require_equal_impl((tc), HEGEL_INTERNAL_ORIGIN,         \
-                                          __VA_ARGS__)
 
 /**
  * @brief Replay a failing example for a @ref HEGEL_TEST from its blob.

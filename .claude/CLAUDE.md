@@ -65,13 +65,12 @@ Public headers in `include/hegel/`:
 - **`test_case.h`** - TestCase class with `draw()`, `assume()`, `note()` methods passed to the test callback
 - **`core.h`** - `IGenerator<T>`, `Generator<T>`, `BasicGenerator<T>` (schema + client-side parser bundle), `CompositeGenerator<T>`, `MappedGenerator<T, U>` with `map()`, `flat_map()`, `filter()` combinators
 - **`settings.h`** - `Settings`, `Database`, `Verbosity` enum
-- **`internal.h`** - The typed draw primitives (`draw_integer`, `draw_float`, `draw_boolean`, spans, collections), `SpanLabel`, the `HegelReject` / `HegelStopTest` / `HegelRequireFailure` exceptions, and the implementations behind `HEGEL_FAIL` / `HEGEL_REQUIRE` / `HEGEL_REQUIRE_EQUAL` (internal only; users interact via `TestCase` methods and the macros)
+- **`internal.h`** - The typed draw primitives (`draw_integer`, `draw_float`, `draw_boolean`, spans, collections), `SpanLabel`, and the `HegelReject` / `HegelStopTest` exceptions (internal only; users interact via `TestCase` methods and the macros)
 - **`generators/`** - Strategy factory functions in `hegel::generators` namespace, split by category: `primitives.h`, `numeric.h`, `strings.h`, `collections.h`, `combinators.h`, `formats.h`, `builds.h`, `default.h` (type-directed derivation via reflect-cpp), `random.h`
 
 Private implementation in `src/`:
 - **`engine.{h,cpp}`** - Wrappers over the libhegel C ABI: run-lifecycle helpers (`hegel::impl`), string-generator construction, and the draw-primitive implementations
 - **`test_case.{h,cpp}`** - Private `TestCaseData` struct (owns the `hegel_test_case_t*` — freed in its destructor — plus per-iteration state; the error-reporting context is per-thread via `impl::thread_context()`) and the `TestCase` method implementations, including `DrawLogScope` — each outermost `TestCase::draw` prints its composed value as a C++ declaration (`auto <name> = <value>;`, rendered by `include/hegel/repr.h`) on the final replay / at Verbose+
-- **`require.{h,cpp}`** - What `HEGEL_FAIL` / `HEGEL_REQUIRE` / `HEGEL_REQUIRE_EQUAL` call: the failure itself and the difference the report shows for two unequal values. `repr_node` (`include/hegel/repr.h`) renders a value as a tree, and the difference walks it, matching parts with a longest common subsequence at each level and descending into a part that holds the change instead of printing it whole
 - **`generators.cpp` / `hegel.cpp`** - implementations for the corresponding public headers; `hegel.cpp` also holds the `hegel::test()` run loop and the failure report
 - **`cmake/libhegel.cmake`** - downloads/verifies/links libhegel and exposes the `hegel::libhegel` imported target; `libhegel/hegel.h` is the vendored C ABI header
 

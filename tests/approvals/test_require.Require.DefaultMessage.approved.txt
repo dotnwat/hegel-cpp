@@ -1,6 +1,0 @@
---- Failure ------------------------------------------------------------
-Falsified after 1 test case (0 discarded):
-Exception: HEGEL_REQUIRE: condition was false
-rerun with: hegel::test(test_fn, settings, {"[blob]"})
---- rethrown: HEGEL_REQUIRE: condition was false
-

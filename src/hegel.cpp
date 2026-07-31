@@ -110,11 +110,6 @@ namespace hegel {
                 return {HEGEL_STATUS_OVERRUN, "", "", ""};
             } catch (const internal::HegelReject&) {
                 return {HEGEL_STATUS_INVALID, "", "", ""};
-            } catch (const internal::HegelRequireFailure& e) {
-                // The origin is the requirement's own call site, so two
-                // requirements that fail on different lines stay two bugs.
-                return {HEGEL_STATUS_INTERESTING, e.origin(), "", e.what(),
-                        std::current_exception()};
             } catch (const std::exception& e) {
                 std::string type = demangle(typeid(e).name());
                 return {HEGEL_STATUS_INTERESTING, type, type, e.what(),

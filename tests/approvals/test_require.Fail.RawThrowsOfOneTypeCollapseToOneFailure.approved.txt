@@ -1,9 +1,0 @@
---- Failure ------------------------------------------------------------
-Falsified after 1 test case (0 discarded):
-
-  auto x = 0;
-
-Exception: std::runtime_error: too small
-rerun with: hegel::test(test_fn, settings, {"[blob]"})
---- rethrown: too small
-
