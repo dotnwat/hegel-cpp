@@ -5,16 +5,15 @@
 
 #include <ApprovalTests.hpp>
 
-// Scrubbers shared by the snapshot suites. Both hide the parts of a failure
-// report that come from the environment rather than from the code under test.
+// Scrubbers shared by the snapshot suites. Each hides a part of a failure
+// report that comes from the environment, so the snapshots pin the layout
+// around a placeholder.
 
 namespace hegel::tests::common {
 
     /// @brief Hides a report's reproduction blob.
     ///
-    /// A blob encodes engine internals and changes with the engine version, so
-    /// the snapshots pin the report layout around a placeholder instead of the
-    /// payload.
+    /// A blob encodes engine internals and changes with the engine version.
     inline ApprovalTests::Options scrub_blob() {
         return ApprovalTests::Options(
             ApprovalTests::Scrubbers::createRegexScrubber(
@@ -24,11 +23,9 @@ namespace hegel::tests::common {
     /// @brief Hides a report's reproduction blob and the source position in
     /// its header.
     ///
-    /// A header that hegel::test() fills in names the file the compiler was
-    /// given, which is an absolute path, and the line of the call, which moves
-    /// whenever the file above it does. Use this for a report Hegel named
-    /// itself; a report named by an explicit TestLocation holds a fixed
-    /// position worth pinning, so scrub only its blob.
+    /// A header that hegel::test() fills in holds the absolute path the
+    /// compiler was given and the line of the call, which moves with the file
+    /// above it. Use this for a report Hegel named itself.
     inline ApprovalTests::Options scrub_report() {
         return ApprovalTests::Options([](const std::string& text) {
             std::string blobless = std::regex_replace(

@@ -50,6 +50,19 @@ TEST(Output, FailingScenariosExitNonZero) {
     }
 }
 
+// Two `throw`s of one type are two bugs in a fresh process as well, where
+// the binary loads at a different address. A throw site holds an offset from
+// its enclosing function, so it survives ASLR and repeats run to run.
+TEST(Output, ThrowSitesGroupTheSameWayInEveryProcess) {
+    for (int run = 0; run < 3; run++) {
+        SubprocessResult r = run_scenario("throw_sites");
+        EXPECT_NE(r.exit_code, 0);
+        assert_matches_regex(r.stderr_data, R"(Failure 1 of 2)");
+        assert_matches_regex(r.stderr_data, R"(even bug with x=10)");
+        assert_matches_regex(r.stderr_data, R"(odd bug with x=11)");
+    }
+}
+
 TEST(Output, ExceptionMessageIsPrinted) {
     SubprocessResult r = run_scenario("exception_message");
     EXPECT_NE(r.exit_code, 0);
@@ -171,6 +184,86 @@ TEST(FailureReport, MultiLineNoteIsIndented) {
         throw std::runtime_error("boom");
     });
     Approvals::verify(out, scrub_report());
+}
+
+namespace {
+    class Tagged : public std::runtime_error, public hegel::FailureOrigin {
+      public:
+        Tagged(std::string tag, const std::string& message)
+            : std::runtime_error(message), tag_(std::move(tag)) {}
+        std::string failure_origin() const override { return tag_; }
+
+      private:
+        std::string tag_;
+    };
+} // namespace
+
+// Two `throw`s of one type are two bugs. The site each was thrown from is
+// part of its origin, so the two shrink separately and the run reports both.
+TEST(FailureReport, ThrowSitesAreDistinctBugs) {
+    std::string out = capture_failure_report(
+        [](hegel::TestCase& tc) {
+            int32_t x = tc.draw(gs::integers<int32_t>());
+            if (x >= 10 && x % 2 == 0) {
+                throw std::runtime_error("even bug with x=" +
+                                         std::to_string(x));
+            }
+            if (x >= 10 && x % 2 != 0) {
+                throw std::runtime_error("odd bug with x=" + std::to_string(x));
+            }
+        },
+        hegel::Settings{.report_multiple_failures = true});
+    EXPECT_TRUE(out.find("Failure 1 of 2") != std::string::npos) << out;
+    EXPECT_TRUE(out.find("even bug with x=10") != std::string::npos) << out;
+    EXPECT_TRUE(out.find("odd bug with x=11") != std::string::npos) << out;
+}
+
+// A site holds no generated values, so every value that reaches one `throw`
+// is the same bug.
+TEST(FailureReport, OneThrowSiteIsOneBug) {
+    std::string out = capture_failure_report(
+        [](hegel::TestCase& tc) {
+            int32_t x = tc.draw(gs::integers<int32_t>());
+            if (x >= 10) {
+                throw std::runtime_error("bug with x=" + std::to_string(x));
+            }
+        },
+        hegel::Settings{.report_multiple_failures = true});
+    EXPECT_TRUE(out.find("Failure 1 of") == std::string::npos) << out;
+}
+
+// An exception that names its own origin splits one `throw` into two bugs,
+// which its site alone cannot do.
+TEST(FailureReport, FailureOriginSplitsOneThrowSite) {
+    std::string out = capture_failure_report(
+        [](hegel::TestCase& tc) {
+            int32_t x = tc.draw(gs::integers<int32_t>());
+            if (x >= 10) {
+                throw Tagged(x % 2 == 0 ? "even" : "odd",
+                             "bug with x=" + std::to_string(x));
+            }
+        },
+        hegel::Settings{.report_multiple_failures = true});
+    EXPECT_TRUE(out.find("Failure 1 of 2") != std::string::npos) << out;
+    EXPECT_TRUE(out.find("bug with x=10") != std::string::npos) << out;
+    EXPECT_TRUE(out.find("bug with x=11") != std::string::npos) << out;
+}
+
+// It joins two `throw`s into one bug as well, so the origin it names is the
+// whole of what Hegel groups by.
+TEST(FailureReport, FailureOriginJoinsTwoThrowSites) {
+    std::string out = capture_failure_report(
+        [](hegel::TestCase& tc) {
+            int32_t x = tc.draw(gs::integers<int32_t>());
+            if (x >= 10 && x % 2 == 0) {
+                throw Tagged("one", "even bug with x=" + std::to_string(x));
+            }
+            if (x >= 10 && x % 2 != 0) {
+                throw Tagged("one", "odd bug with x=" + std::to_string(x));
+            }
+        },
+        hegel::Settings{.report_multiple_failures = true});
+    EXPECT_TRUE(out.find("Failure 1 of") == std::string::npos) << out;
 }
 
 namespace {

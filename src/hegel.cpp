@@ -74,6 +74,43 @@ namespace hegel {
         // names a test defined by the HEGEL_TEST macro.
         enum class RerunForm { Call, Annotation };
 
+        // The installed test framework integration
+        internal::FrameworkHooks& framework_hooks() {
+            static internal::FrameworkHooks hooks;
+            return hooks;
+        }
+
+        // Names the framework test that runs now, or "" outside one.
+        std::string framework_test_name() {
+            if (framework_hooks().current_test_name == nullptr) {
+                return {};
+            }
+            return framework_hooks().current_test_name();
+        }
+
+        // Runs one test-case body, through the framework integration when
+        // there is one so it can raise the failures it recorded.
+        void run_case(const std::function<void()>& body) {
+            if (framework_hooks().run_case == nullptr) {
+                body();
+                return;
+            }
+            framework_hooks().run_case(body);
+        }
+
+        // Scopes the example database to one test. The name is the framework
+        // test that runs now, or the function that called hegel::test()
+        Settings with_default_database_key(Settings settings, const char* file,
+                                           const std::string& name) {
+            if (settings.database_key.has_value() || name.empty() ||
+                settings.database.kind() == Database::Kind::Disabled) {
+                return settings;
+            }
+            settings.database_key =
+                std::string(file == nullptr ? "" : file) + "::" + name;
+            return settings;
+        }
+
         struct BodyOutcome {
             hegel_status_t status;
             std::string origin;
@@ -104,7 +141,7 @@ namespace hegel {
         BodyOutcome run_body(const std::function<void(TestCase&)>& test_fn,
                              TestCase& tc) {
             try {
-                test_fn(tc);
+                run_case([&] { test_fn(tc); });
                 return {HEGEL_STATUS_VALID, "", "", ""};
             } catch (const internal::HegelStopTest&) {
                 return {HEGEL_STATUS_OVERRUN, "", "", ""};
@@ -112,7 +149,14 @@ namespace hegel {
                 return {HEGEL_STATUS_INVALID, "", "", ""};
             } catch (const std::exception& e) {
                 std::string type = demangle(typeid(e).name());
-                return {HEGEL_STATUS_INTERESTING, type, type, e.what(),
+                // The type names the bug, unless the exception names it
+                // itself: one type can stand for several distinct bugs.
+                std::string origin = type;
+                if (const auto* named =
+                        dynamic_cast<const FailureOrigin*>(&e)) {
+                    origin = named->failure_origin();
+                }
+                return {HEGEL_STATUS_INTERESTING, origin, type, e.what(),
                         std::current_exception()};
             } catch (...) {
                 // Only user code runs inside the try, so anything caught
@@ -208,10 +252,7 @@ namespace hegel {
             if (printed_output) {
                 std::fprintf(stderr, "\n");
             }
-            if (outcome.type_name.empty()) {
-                std::fprintf(stderr, "Exception: %s\n",
-                             outcome.message.c_str());
-            } else if (outcome.message.empty()) {
+            if (outcome.message.empty()) {
                 std::fprintf(stderr, "Exception: %s\n",
                              outcome.type_name.c_str());
             } else {
@@ -496,26 +537,16 @@ namespace hegel {
 
     namespace internal {
         namespace {
-            struct RegisteredTest {
-                const char* name;
-                void (*run)();
-            };
-
             // Function-local static so registrations from other translation
             // units' static initializers always find a constructed registry.
-            std::vector<RegisteredTest>& test_registry() {
-                static std::vector<RegisteredTest> registry;
-                return registry;
-            }
-
             std::map<std::string, std::string>& blob_registry() {
                 static std::map<std::string, std::string> registry;
                 return registry;
             }
         } // namespace
 
-        bool register_test(const char* name, void (*run)()) {
-            test_registry().push_back({name, run});
+        bool install_framework_hooks(const FrameworkHooks& hooks) {
+            framework_hooks() = hooks;
             return true;
         }
 
@@ -532,33 +563,6 @@ namespace hegel {
             return {blob->second};
         }
     } // namespace internal
-
-    int run_all_tests() {
-        const auto& registry = internal::test_registry();
-        size_t failed = 0;
-        for (const internal::RegisteredTest& test : registry) {
-            try {
-                test.run();
-            } catch (const std::exception& e) {
-                failed++;
-                std::fprintf(stderr, "[ FAILED ] %s\n%s\n", test.name,
-                             e.what());
-            } catch (...) {
-                failed++;
-                std::string origin = "unknown exception";
-                if (const std::type_info* tinfo =
-                        abi::__cxa_current_exception_type()) {
-                    origin = demangle(tinfo->name());
-                }
-                std::fprintf(stderr,
-                             "[ FAILED ] %s\nnon-std exception of type %s\n",
-                             test.name, origin.c_str());
-            }
-        }
-        std::fprintf(stderr, "Ran %zu Hegel tests: %zu failed\n",
-                     registry.size(), failed);
-        return failed == 0 ? 0 : 1;
-    }
 
     namespace {
         void run_test(const std::function<void(TestCase&)>& test_fn,
@@ -583,15 +587,31 @@ namespace hegel {
 
     void test(const std::function<void(TestCase&)>& test_fn,
               const Settings& settings,
-              const std::vector<std::string>& failure_blobs) {
-        run_test(test_fn, std::nullopt, RerunForm::Call, settings,
+              const std::vector<std::string>& failure_blobs,
+              const char* caller_file, const char* caller_function,
+              int caller_line) {
+        std::string file = caller_file == nullptr ? "" : caller_file;
+        std::string framework_name = framework_test_name();
+        std::optional<TestLocation> location;
+        if (!framework_name.empty()) {
+            location = TestLocation{framework_name, file, caller_line};
+        }
+        std::string key_name = framework_name;
+        if (key_name.empty() && caller_function != nullptr) {
+            key_name = caller_function;
+        }
+        run_test(test_fn, location, RerunForm::Call,
+                 with_default_database_key(settings, caller_file, key_name),
                  failure_blobs);
     }
 
     void test(const std::function<void(TestCase&)>& test_fn,
               const TestLocation& location, const Settings& settings,
               const std::vector<std::string>& failure_blobs) {
-        run_test(test_fn, location, RerunForm::Call, settings, failure_blobs);
+        run_test(test_fn, location, RerunForm::Call,
+                 with_default_database_key(settings, location.file.c_str(),
+                                           location.name),
+                 failure_blobs);
     }
 
     namespace internal {
