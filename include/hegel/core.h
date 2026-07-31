@@ -46,7 +46,7 @@ namespace hegel::generators {
      * HEGEL_TEST(generator_tour)(hegel::TestCase& tc) {
      *     // Create a generator and draw a value
      *     auto int_gen = gs::integers<int>({.min_value = 0, .max_value = 100});
-     *     HEGEL_DRAW(tc, value, int_gen);
+     *     auto value = tc.draw("value", int_gen);
      *
      *     // Transform with map
      *     auto squared = int_gen.map([](int x) { return x * x; });

@@ -1,4 +1,4 @@
---- Failure ------------------------------------------------------------
+--- Failure: FailureReport.NonStdException ([location]) ---
 Falsified after 2 test cases (0 discarded):
 
   auto draw_1 = 5;

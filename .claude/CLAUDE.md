@@ -51,6 +51,16 @@ The library calls libhegel's C ABI (`hegel_*` functions) directly, in-process �
 4. `hegel_run_result` reports passed / failed / errored. On failure, each counterexample blob is replayed via `hegel_test_case_from_blob` to reproduce the user's notes and the failing exception message.
 5. The replay is wrapped in a framed report: a header naming the test and its source line, a `Falsified after N test cases (M discarded):` line, the indented body of drawn values and notes, `Exception: <type>: <message>`, and a `rerun with:` line. Counting stops at the first failing case, so the number says how many cases it took to find the bug rather than how much the shrinker did. `hegel::test()` has an overload taking a `TestLocation`; `internal::test_from_macro` is what `HEGEL_TEST` expands to, and only it prints the `HEGEL_REPRODUCE_FAILURE` form of the rerun line.
 
+Hegel runs no tests for you: `HEGEL_TEST` defines a function the user calls from `main()`, and there is no registry. With a test framework, the property goes inside one of its tests and calls `hegel::test()`.
+
+### Test-framework integration
+
+`internal::FrameworkHooks` (declared in `include/hegel/hegel.h`, stored in `src/hegel.cpp`) is how a framework takes part in a run: `current_test_name()` names the test that is running, and `run_case()` wraps each body invocation. `include/hegel/gtest.h` installs the GoogleTest pair from a namespace-scope variable initializer, and `hegel.h` includes it when `GTEST_TEST` is already defined (unless `HEGEL_NO_GTEST` is).
+
+- `run_case` runs the body under a `ScopedFakeTestPartResultReporter`, so the assertions a case fails do not reach GoogleTest, and raises them together as `hegel::GTestFailure`. Without this, an `ASSERT_*`/`EXPECT_*` failure only records and returns, which Hegel reads as a passing case.
+- `Settings::database_key` defaults to `"<file>::<name>"`. The file comes from `__builtin_FILE()` in a default argument of `hegel::test()`, so it names the call site; the name is `current_test_name()` (`Suite.Name`) or `__builtin_FUNCTION()`. A disabled database gets no derived key — the key takes part in generation, so deriving one there would change what a run produces.
+- `hegel::test()` builds a `TestLocation` only from `current_test_name()`, never from `__builtin_FUNCTION()`: a function name (often `operator()`) says too little to head a report with. Reports Hegel names itself carry an absolute path and the line of the call, so the snapshot suites scrub the header with `scrub_report()` (`tests/common/approvals.h`); a report named by an explicit `TestLocation` keeps its fixed position and uses `scrub_blob()`.
+
 ### Draw path
 
 A `draw()` calls libhegel's typed draw primitives (`hegel_generate_integer`, `hegel_generate_float`, `hegel_generate_boolean`, `hegel_generate_bytes`, `hegel_generate_string`, `hegel_generate_date`/`_time`/`_datetime`, `hegel_generate_ipv4`/`_ipv6`) directly — there is no schema or serialization layer. The template-visible primitives (`draw_integer`, `draw_integer_unsigned`, `draw_float`, `draw_boolean`, spans, collections) are declared in `include/hegel/internal.h` and implemented in `src/engine.cpp`; the string/bytes/date draws used only by `src/generators.cpp` live in `src/engine.h` (`hegel::impl`).
@@ -62,6 +72,7 @@ A `draw()` calls libhegel's typed draw primitives (`hegel_generate_integer`, `he
 
 Public headers in `include/hegel/`:
 - **`hegel.h`** - Main include, declares `hegel::test()` entry point
+- **`gtest.h`** - GoogleTest integration (header-only): `hegel::GTestFailure` and the `FrameworkHooks` it installs
 - **`test_case.h`** - TestCase class with `draw()`, `assume()`, `note()` methods passed to the test callback
 - **`core.h`** - `IGenerator<T>`, `Generator<T>`, `BasicGenerator<T>` (schema + client-side parser bundle), `CompositeGenerator<T>`, `MappedGenerator<T, U>` with `map()`, `flat_map()`, `filter()` combinators
 - **`settings.h`** - `Settings`, `Database`, `Verbosity` enum

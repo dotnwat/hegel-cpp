@@ -17,9 +17,13 @@
 #include "common/subprocess.h"
 #include "common/utils.h"
 
+#include "common/approvals.h"
+
 using ApprovalTests::Approvals;
 using hegel::tests::common::assert_matches_regex;
 using hegel::tests::common::run_subject;
+using hegel::tests::common::scrub_blob;
+using hegel::tests::common::scrub_report;
 using hegel::tests::common::SubprocessResult;
 
 #ifndef HEGEL_SUBJECT_BIN
@@ -53,15 +57,6 @@ TEST(Output, ExceptionMessageIsPrinted) {
 }
 
 namespace {
-    // A reproduction blob encodes engine internals and changes with the
-    // engine version, so the snapshots pin the report layout around a
-    // placeholder instead of the payload.
-    ApprovalTests::Options scrub_blob() {
-        return ApprovalTests::Options(
-            ApprovalTests::Scrubbers::createRegexScrubber(
-                std::regex(R"("[A-Za-z0-9+/=]{8,}")"), R"("[blob]")"));
-    }
-
     // A fixed seed keeps the shrunk replay, and with it the whole report,
     // deterministic.
     hegel::Settings report_settings(hegel::Settings settings = {}) {
@@ -104,7 +99,7 @@ TEST(FailureReport, SingleFailure) {
         int32_t x = tc.draw(gs::integers<int32_t>());
         throw std::runtime_error("intentional failure: " + std::to_string(x));
     });
-    Approvals::verify(out, scrub_blob());
+    Approvals::verify(out, scrub_report());
 }
 
 // Fails for x >= 10; the replayed counterexample shrinks to exactly 10.
@@ -115,7 +110,7 @@ TEST(FailureReport, OriginStableAcrossDrawnValues) {
             throw std::runtime_error("failure with x=" + std::to_string(x));
         }
     });
-    Approvals::verify(out, scrub_blob());
+    Approvals::verify(out, scrub_report());
 }
 
 // A non-std exception still produces the replay output before re-raising.
@@ -126,14 +121,14 @@ TEST(FailureReport, NonStdException) {
             throw 42;
         }
     });
-    Approvals::verify(out, scrub_blob());
+    Approvals::verify(out, scrub_report());
 }
 
 // A body that throws before it draws anything has nothing to show between the
 // count and the exception, so the report keeps no empty body block.
 TEST(FailureReport, NoDrawsPrintsBodylessReport) {
     std::string out = capture_failure_report(throw_boom);
-    Approvals::verify(out, scrub_blob());
+    Approvals::verify(out, scrub_report());
 }
 
 // A test location names the test and its source line in the header. The
@@ -165,7 +160,7 @@ TEST(FailureReport, DiscardedCasesAreCounted) {
         }
         throw std::runtime_error("boom");
     });
-    Approvals::verify(out, scrub_blob());
+    Approvals::verify(out, scrub_report());
 }
 
 // A note that spans several lines keeps every line inside the body's
@@ -175,7 +170,7 @@ TEST(FailureReport, MultiLineNoteIsIndented) {
         tc.note("first line\nsecond line");
         throw std::runtime_error("boom");
     });
-    Approvals::verify(out, scrub_blob());
+    Approvals::verify(out, scrub_report());
 }
 
 namespace {
@@ -195,7 +190,7 @@ namespace {
 TEST(FailureReport, MultipleFailuresReported) {
     std::string out = capture_failure_report(
         two_bugs, hegel::Settings{.report_multiple_failures = true});
-    Approvals::verify(out, scrub_blob());
+    Approvals::verify(out, scrub_report());
 }
 
 // With report_multiple_failures off, the run stops at the first failing
@@ -203,7 +198,7 @@ TEST(FailureReport, MultipleFailuresReported) {
 TEST(FailureReport, MultipleFailuresOffReportsOne) {
     std::string out = capture_failure_report(
         two_bugs, hegel::Settings{.report_multiple_failures = false});
-    Approvals::verify(out, scrub_blob());
+    Approvals::verify(out, scrub_report());
 }
 
 // print_blob = false drops the rerun hint. The rest of the report stays.
@@ -211,7 +206,7 @@ TEST(FailureReport, PrintBlobOffDropsRerunHint) {
     std::string out = capture_failure_report(
         [](hegel::TestCase&) { throw std::runtime_error("silly error"); },
         hegel::Settings{.print_blob = false});
-    Approvals::verify(out);
+    Approvals::verify(out, scrub_report());
 }
 
 // ---------------------------------------------------------------------------
@@ -365,17 +360,6 @@ TEST(DrawNames, MixedRepeatableAndBareUses) {
         (void)tc.draw("x", gs::just(1), /*repeatable=*/true);
         (void)tc.draw("x", gs::just(2));
     });
-    Approvals::verify(out);
-}
-
-// HEGEL_DRAW declares the variable and prints under its name.
-TEST(DrawNames, MacroBindsAndPrints) {
-    int seen = 0;
-    std::string out = run_verbose([&seen](hegel::TestCase& tc) {
-        HEGEL_DRAW(tc, width, gs::just(7));
-        seen = width;
-    });
-    EXPECT_EQ(seen, 7);
     Approvals::verify(out);
 }
 

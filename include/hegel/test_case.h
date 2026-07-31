@@ -31,7 +31,7 @@ namespace hegel {
      * @code{.cpp}
      * HEGEL_TEST(example)(hegel::TestCase& tc) {
      *     namespace gs = hegel::generators;
-     *     HEGEL_DRAW(tc, x, gs::integers<int>({.min_value = 0}));
+     *     auto x = tc.draw("x", gs::integers<int>({.min_value = 0}));
      *     tc.assume(x != 0);
      *     tc.note("x = " + std::to_string(x));
      * }
@@ -57,8 +57,7 @@ namespace hegel {
          * <value>;`, on the final replay of a failing test case and on
          * every case at Verbosity::Verbose and above. Draws made through
          * this overload print as `draw_1`, `draw_2`, ... in draw order.
-         * Use the named overload or @ref HEGEL_DRAW to print under a
-         * variable name.
+         * Use the named overload to print under a variable name.
          *
          * @tparam T The value type produced by @p gen
          * @param gen The generator to draw from
@@ -71,9 +70,7 @@ namespace hegel {
          *        @p name.
          *
          * @tparam T The value type produced by @p gen
-         * @param name Variable name for the printed declaration. See also
-         *             @ref HEGEL_DRAW, which captures the name
-         *             automatically.
+         * @param name Variable name for the printed declaration.
          * @param gen The generator to draw from
          * @param repeatable Pass true to print @p name with a 1-based
          *             suffix per use (`x_1`, `x_2`, ...). Useful when the

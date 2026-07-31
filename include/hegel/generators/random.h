@@ -28,12 +28,12 @@ namespace hegel::generators {
      * can be used with any `<random>` distribution.
      *
      * @code{.cpp}
-     *  HEGEL_DRAW(tc, rng, gs::randoms());
+     *  auto rng = tc.draw("rng", gs::randoms());
      *  std::uniform_real_distribution<double> dist(0.0, 10.0);
      *  double uniform_value = dist(rng);
      *
      *  // Using true random
-     *  HEGEL_DRAW(tc, rng, gs::randoms({ .use_true_random = true }));
+     *  auto rng = tc.draw("rng", gs::randoms({ .use_true_random = true }));
      *  std::lognormal_distribution<double> dist(0.0, 10.0);
      *  double uniform_value = dist(rng);
      * @endcode
@@ -105,7 +105,7 @@ namespace hegel::generators {
      *
      * @code{.cpp}
      * namespace gs = hegel::generators;
-     * HEGEL_DRAW(tc, rng, gs::randoms());
+     * auto rng = tc.draw("rng", gs::randoms());
      *
      * std::lognormal_distribution<double> dist(0.0, 1.0);
      * double value = dist(rng);
