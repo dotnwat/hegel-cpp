@@ -1,4 +1,4 @@
---- Failure ------------------------------------------------------------
+--- Failure: Stateful.StatePrintingIsOnByDefault ([location]) ---
 Falsified after 2 test cases (0 discarded):
 
   state = 0

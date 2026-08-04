@@ -23,7 +23,7 @@ include(FetchContent)
 FetchContent_Declare(
     hegel
     GIT_REPOSITORY https://github.com/hegeldev/hegel-cpp.git
-    GIT_TAG v0.10.0
+    GIT_TAG v0.11.0
 )
 FetchContent_MakeAvailable(hegel)
 
@@ -56,7 +56,7 @@ std::vector<int> my_sort(std::vector<int> ls) {
 }
 
 HEGEL_TEST(sort_agrees_with_std_sort)(hegel::TestCase& tc) {
-    HEGEL_DRAW(tc, vec1, gs::vectors(gs::integers<int>()));
+    auto vec1 = tc.draw("vec1", gs::vectors(gs::integers<int>()));
     auto vec2 = my_sort(vec1);
     std::sort(vec1.begin(), vec1.end());
     if (vec1 != vec2) {
@@ -90,11 +90,9 @@ rerun with: HEGEL_REPRODUCE_FAILURE(sort_agrees_with_std_sort, "AXicY2VgYGBkZOBi
 The report names the test and its source line, says how many cases it took
 to find the failure, and shows the minimal example.
 
-Each draw is replayed and printed as a C++ declaration. The `HEGEL_DRAW`
-macro binds the value and records the variable's name for that output. Plain
-`tc.draw(gen)` works anywhere a macro doesn't fit and prints numbered
-placeholders (`auto draw_1 = ...;`); `tc.draw("vec1", gen)` names one
-explicitly.
+Each draw is replayed and printed as a C++ declaration. `tc.draw("vec1", gen)`
+names the draw with `vec1` as above. An unnamed `tc.draw(gen)` prints
+(`auto draw_1 = ...;`) instead.
 
 The last line replays this exact failure. Put it above the test to rerun the
 counterexample instead of generating new cases:

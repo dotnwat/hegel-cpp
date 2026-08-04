@@ -1,9 +1,0 @@
---- Failure ------------------------------------------------------------
-Falsified after 6 test cases (0 discarded):
-
-  auto x = 60;
-
-Exception: too big
-rerun with: hegel::test(test_fn, settings, {"[blob]"})
---- rethrown: too big
-

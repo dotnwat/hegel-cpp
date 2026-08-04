@@ -1,16 +1,12 @@
 #pragma once
 
-#include "repr.h"
 #include "test_case.h"
 
 #include <cstdint>
 #include <exception>
 #include <optional>
-#include <stdexcept>
 #include <string>
 #include <string_view>
-#include <type_traits>
-#include <utility>
 #include <vector>
 
 /**
@@ -138,82 +134,6 @@ namespace hegel::internal {
             return "test case stopped by backend";
         }
     };
-
-    /* Exception thrown by a failed HEGEL_REQUIRE / HEGEL_REQUIRE_EQUAL. It
-     * carries the call site as its origin. The engine groups counterexamples
-     * by origin, so an origin taken from the throw site inside the library
-     * would make every failed requirement in a run look like one bug.
-     */
-    class HegelRequireFailure : public std::runtime_error {
-      public:
-        HegelRequireFailure(std::string origin, const std::string& message)
-            : std::runtime_error(message), origin_(std::move(origin)) {}
-
-        const std::string& origin() const noexcept { return origin_; }
-
-      private:
-        std::string origin_;
-    };
-
-    // Whether notes and drawn values print for this test case. False on a
-    // case that only feeds the search. TestCase::note() applies this itself;
-    // ask first only to skip building a message that would be dropped.
-    bool diagnostics_visible(const TestCase& tc);
-
-    // Renders the difference between two rendered values. Parts only in
-    // `left` are marked "-", parts only in `right` "+", and a part that
-    // holds the change is descended into rather than printed whole.
-    std::string render_node_diff(const ReprNode& left, const ReprNode& right);
-
-    [[noreturn]] void fail_require(const char* origin,
-                                   const std::string& message);
-
-    // Implementation of HEGEL_FAIL. `origin` is the macro's call site.
-    [[noreturn]] inline void
-    fail_impl(const TestCase& tc, const char* origin,
-              std::string_view message = "HEGEL_FAIL: test case failed") {
-        // The test case is accepted for symmetry with the other per-test-case
-        // operations. The failure itself is client-side.
-        (void)tc;
-        fail_require(origin, std::string(message));
-    }
-
-    // Implementation of HEGEL_REQUIRE_EQUAL. `origin` is the macro's call site.
-    inline void require_impl(
-        const TestCase& tc, const char* origin, bool condition,
-        std::string_view message = "HEGEL_REQUIRE: condition was false") {
-        (void)tc;
-        if (!condition) {
-            fail_require(origin, std::string(message));
-        }
-    }
-
-    // Implementation of HEGEL_REQUIRE_EQUAL. The two values are compared as
-    // repr() renders them.
-    template <typename T>
-    void require_equal_impl(
-        const TestCase& tc, const char* origin, const T& left, const T& right,
-        std::string_view message = "HEGEL_REQUIRE_EQUAL: values differ") {
-        // repr() gives unrenderable types the same "<unprintable T>" text for
-        // every value, which would make all values of the type equal to each
-        // other.
-        static_assert(is_renderable_v<T>,
-                      "HEGEL_REQUIRE_EQUAL needs a type Hegel can render. "
-                      "Give it an operator<<, or compare its parts instead.");
-        if (repr(left) == repr(right)) {
-            return;
-        }
-        std::string text(message);
-        // note() drops a message that will not print, but only after its
-        // argument is built. This guard keeps the two value trees and the
-        // descent through them out of every case that fails on the way to
-        // the counterexample, which is most of them.
-        if (diagnostics_visible(tc)) {
-            tc.note(text + " (- lhs / + rhs):\n" +
-                    render_node_diff(repr_node(left), repr_node(right)));
-        }
-        fail_require(origin, text);
-    }
 
 } // namespace hegel::internal
 

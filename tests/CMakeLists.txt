@@ -132,8 +132,8 @@ hegel_add_test(NAME test_guiding SOURCE test_guiding.cpp)
 
 # Value printer for draw output.
 hegel_add_test(NAME test_repr SOURCE test_repr.cpp)
-# In-test assertions: HEGEL_REQUIRE / HEGEL_REQUIRE_EQUAL.
-hegel_add_test(NAME test_require SOURCE test_require.cpp APPROVALS)
+# GoogleTest assertion macros inside a property body.
+hegel_add_test(NAME test_gtest_macros SOURCE test_gtest_macros.cpp)
 # Test-case cloning: clone(), spawn()/join(), and clone output approval.
 hegel_add_test(NAME test_clone SOURCE test_clone.cpp USE_UTILS APPROVALS)
 
@@ -169,7 +169,3 @@ add_test(NAME test_gtest COMMAND test_gtest)
 set_tests_properties(test_gtest PROPERTIES
     PASS_REGULAR_EXPRESSION "actual:"
 )
-
-add_executable(test_run_all test_run_all.cpp)
-target_link_libraries(test_run_all PRIVATE hegel)
-add_test(NAME test_run_all COMMAND test_run_all)

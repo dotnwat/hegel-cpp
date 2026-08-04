@@ -1,24 +1,14 @@
-#include <regex>
-
 #include <gtest/gtest.h>
 #include <hegel/hegel.h>
 
 #include <ApprovalTests.hpp>
 
+#include "common/approvals.h"
+
 namespace gs = hegel::generators;
 
 using ApprovalTests::Approvals;
-
-namespace {
-    // A reproduction blob encodes engine internals and changes with the
-    // engine version, so the snapshots pin the report layout around a
-    // placeholder instead of the payload.
-    ApprovalTests::Options scrub_blob() {
-        return ApprovalTests::Options(
-            ApprovalTests::Scrubbers::createRegexScrubber(
-                std::regex(R"("[A-Za-z0-9+/=]{8,}")"), R"("[blob]")"));
-    }
-} // namespace
+using hegel::tests::common::scrub_report;
 
 TEST(Pools, PoolsRoundTrip) {
     hegel::test([](hegel::TestCase& tc) {
@@ -262,7 +252,7 @@ TEST(Stateful, VerboseNestsDrawsAndHidesStopDecision) {
                         .database = hegel::Database::disabled(),
                         .stateful_step_count = 3});
     std::string out = testing::internal::GetCapturedStderr();
-    Approvals::verify(out, scrub_blob());
+    Approvals::verify(out, scrub_report());
 }
 
 // The state prints before the first step and after every step that runs to
@@ -270,10 +260,10 @@ TEST(Stateful, VerboseNestsDrawsAndHidesStopDecision) {
 // that throws prints no state, leaving the last state before the exception
 // as the one the failing step started from.
 TEST(Stateful, StatePrintingIsOnByDefault) {
-    Approvals::verify(capture_counter_failure(), scrub_blob());
+    Approvals::verify(capture_counter_failure(), scrub_report());
 }
 
 TEST(Stateful, StatePrintingCanBeDisabled) {
     Approvals::verify(capture_counter_failure({.print_state = false}),
-                      scrub_blob());
+                      scrub_report());
 }
