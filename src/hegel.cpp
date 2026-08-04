@@ -44,18 +44,28 @@ namespace {
     // The return address of the innermost throw this thread made. One per
     // thread, since clone() and spawn() run test-case bodies on their own.
     thread_local const void* last_throw_address = nullptr;
+
+    // GCC declares `__cxa_throw` for its own throw statements with `void*` in
+    // place of the ABI's `std::type_info*`. The definition below must use the
+    // same type, or the two declarations conflict.
+#if defined(__clang__)
+    using ThrowTypeInfo = std::type_info;
+#else
+    using ThrowTypeInfo = void;
+#endif
 } // namespace
 
 // The stack unwinds before run_body() catches, so a backtrace taken there names
 // run_body() as the origin for every failure. `__cxa_throw` runs while the
 // throwing frame is still live, so Hegel defines its own and forwards to the
 // real one.
-extern "C" void __cxa_throw(void* exception, std::type_info* type_info,
+// NOLINTNEXTLINE(bugprone-reserved-identifier) - the ABI hook name is fixed
+extern "C" void __cxa_throw(void* exception, ThrowTypeInfo* type_info,
                             void (*destructor)(void*)) {
     // store for determining origin later
     last_throw_address = __builtin_return_address(0);
 
-    using ThrowFn = void (*)(void*, std::type_info*, void (*)(void*));
+    using ThrowFn = void (*)(void*, ThrowTypeInfo*, void (*)(void*));
     // find the real __cxa_throw and cache
     static ThrowFn forward =
         reinterpret_cast<ThrowFn>(dlsym(RTLD_NEXT, "__cxa_throw"));
@@ -175,11 +185,11 @@ namespace hegel {
             return std::string(buf.data(), ptr);
         }
 
-        // Return most recent throw in a thread as "<function>+0x<offset within
-        // it>". Each address is looked up and demangled once.
+        // Return the most recent throw in a thread as "<binary>+0x<offset
+        // from its load address>".
         std::string last_throw_site() {
 #if defined(HEGEL_HAS_THROW_SITE)
-            // cache origins to prevent repeated demangling during shrinking
+            // cache sites to prevent repeated lookups during shrinking
             static thread_local std::map<const void*, std::string> sites;
             auto known = sites.find(last_throw_address);
             if (known != sites.end()) {
@@ -187,14 +197,15 @@ namespace hegel {
             }
 
             std::string site;
-            Dl_info symbol;
-            // translate last throw addr to nearest overlapping runtime symbol
-            if (dladdr(last_throw_address, &symbol) != 0 &&
-                symbol.dli_sname != nullptr && symbol.dli_saddr != nullptr) {
+            Dl_info info;
+            // translate the throw address to global offset in the binary that
+            // contains it
+            if (dladdr(last_throw_address, &info) != 0 &&
+                info.dli_fname != nullptr) {
                 auto offset = static_cast<uintptr_t>(
                     static_cast<const char*>(last_throw_address) -
-                    static_cast<const char*>(symbol.dli_saddr));
-                site = demangle(symbol.dli_sname) + "+0x" + to_hex(offset);
+                    static_cast<const char*>(info.dli_fbase));
+                site = std::string(info.dli_fname) + "+0x" + to_hex(offset);
             }
             sites.emplace(last_throw_address, site);
             return site;
