@@ -16,6 +16,8 @@
 
 #include <hegel.h>
 
+#include <array>
+#include <charconv>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
@@ -30,6 +32,38 @@
 #include <string>
 #include <typeinfo>
 #include <vector>
+
+#if defined(__APPLE__) || defined(__ELF__)
+#include <dlfcn.h>
+#endif
+// needed to wrap __cxa_throw
+#if defined(RTLD_NEXT)
+#define HEGEL_HAS_THROW_SITE 1
+
+namespace {
+    // The return address of the innermost throw this thread made. One per
+    // thread, since clone() and spawn() run test-case bodies on their own.
+    thread_local const void* last_throw_address = nullptr;
+} // namespace
+
+// The stack unwinds before run_body() catches, so a backtrace taken there names
+// run_body() as the origin for every failure. `__cxa_throw` runs while the
+// throwing frame is still live, so Hegel defines its own and forwards to the
+// real one.
+extern "C" void __cxa_throw(void* exception, std::type_info* type_info,
+                            void (*destructor)(void*)) {
+    // store for determining origin later
+    last_throw_address = __builtin_return_address(0);
+
+    using ThrowFn = void (*)(void*, std::type_info*, void (*)(void*));
+    // find the real __cxa_throw and cache
+    static ThrowFn forward =
+        reinterpret_cast<ThrowFn>(dlsym(RTLD_NEXT, "__cxa_throw"));
+    // call the real __cxa_throw
+    forward(exception, type_info, destructor);
+    __builtin_unreachable(); // forward() never returns
+}
+#endif
 
 namespace hegel {
 
@@ -134,6 +168,50 @@ namespace hegel {
             return out;
         }
 
+        std::string to_hex(uintptr_t value) {
+            std::array<char, 2 * sizeof(uintptr_t)> buf;
+            auto [ptr, ec] =
+                std::to_chars(buf.data(), buf.data() + buf.size(), value, 16);
+            return std::string(buf.data(), ptr);
+        }
+
+        // Return most recent throw in a thread as "<function>+0x<offset within
+        // it>". Each address is looked up and demangled once.
+        std::string last_throw_site() {
+#if defined(HEGEL_HAS_THROW_SITE)
+            // cache origins to prevent repeated demangling during shrinking
+            static thread_local std::map<const void*, std::string> sites;
+            auto known = sites.find(last_throw_address);
+            if (known != sites.end()) {
+                return known->second;
+            }
+
+            std::string site;
+            Dl_info symbol;
+            // translate last throw addr to nearest overlapping runtime symbol
+            if (dladdr(last_throw_address, &symbol) != 0 &&
+                symbol.dli_sname != nullptr && symbol.dli_saddr != nullptr) {
+                auto offset = static_cast<uintptr_t>(
+                    static_cast<const char*>(last_throw_address) -
+                    static_cast<const char*>(symbol.dli_saddr));
+                site = demangle(symbol.dli_sname) + "+0x" + to_hex(offset);
+            }
+            sites.emplace(last_throw_address, site);
+            return site;
+#else
+            return {};
+#endif
+        }
+
+        std::string origin_of(const FailureOrigin* named,
+                              const std::string& type) {
+            if (named != nullptr) {
+                return named->failure_origin();
+            }
+            std::string site = last_throw_site();
+            return site.empty() ? type : type + " at " + site;
+        }
+
         // Run the user's test body once and classify the outcome into the
         // libhegel status the caller passes to hegel_mark_complete. The
         // origin is demangled here, before it reaches the engine, so the
@@ -149,13 +227,8 @@ namespace hegel {
                 return {HEGEL_STATUS_INVALID, "", "", ""};
             } catch (const std::exception& e) {
                 std::string type = demangle(typeid(e).name());
-                // The type names the bug, unless the exception names it
-                // itself: one type can stand for several distinct bugs.
-                std::string origin = type;
-                if (const auto* named =
-                        dynamic_cast<const FailureOrigin*>(&e)) {
-                    origin = named->failure_origin();
-                }
+                std::string origin =
+                    origin_of(dynamic_cast<const FailureOrigin*>(&e), type);
                 return {HEGEL_STATUS_INTERESTING, origin, type, e.what(),
                         std::current_exception()};
             } catch (...) {
@@ -164,11 +237,12 @@ namespace hegel {
                 // exception, for which the ABI can supply neither a
                 // type_info nor an exception_ptr. Substitute a described
                 // exception so the re-raise path stays valid.
-                std::string origin = "unknown_exception";
+                std::string type = "unknown_exception";
                 if (const std::type_info* tinfo =
                         abi::__cxa_current_exception_type()) {
-                    origin = demangle(tinfo->name());
+                    type = demangle(tinfo->name());
                 }
+                std::string origin = origin_of(nullptr, type);
                 std::exception_ptr exception = std::current_exception();
                 if (exception == nullptr) {
                     // GCOVR_EXCL_START
@@ -176,8 +250,7 @@ namespace hegel {
                         "test body raised a foreign (non-C++) exception"));
                     // GCOVR_EXCL_STOP
                 }
-                return {HEGEL_STATUS_INTERESTING, origin, origin, "",
-                        exception};
+                return {HEGEL_STATUS_INTERESTING, origin, type, "", exception};
             }
         }
 
