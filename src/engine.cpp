@@ -84,6 +84,11 @@ namespace hegel::impl {
         check_rc(ctx, hegel_settings_set_test_cases(ctx, s, test_cases));
     }
 
+    void settings_set_stateful_step_count(hegel_context_t* ctx,
+                                          hegel_settings_t* s, int64_t n) {
+        check_rc(ctx, hegel_settings_set_stateful_step_count(ctx, s, n));
+    }
+
     void settings_set_verbosity(hegel_context_t* ctx, hegel_settings_t* s,
                                 hegel_verbosity_t verbosity) {
         check_rc(ctx, hegel_settings_set_verbosity(ctx, s, verbosity));
@@ -669,14 +674,6 @@ namespace hegel::internal {
             hegel_pool_generate(scope.ctx, scope.tc, pool_id, consume, &var_id),
             "hegel_pool_generate");
         return var_id;
-    }
-
-    bool is_single_test_case(const TestCase& tc) {
-        return tc.data()->mode == Mode::SingleTestCase;
-    }
-
-    int64_t stateful_step_count(const TestCase& tc) {
-        return tc.data()->stateful_step_count;
     }
 
     int64_t draw_rule(const TestCase& tc, int64_t state_machine_id) {

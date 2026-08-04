@@ -81,8 +81,6 @@ namespace hegel::internal {
     int64_t new_state_machine(const TestCase& tc,
                               const std::vector<std::string>& rule_names,
                               const std::vector<std::string>& invariant_names);
-    bool is_single_test_case(const TestCase& tc);
-    int64_t stateful_step_count(const TestCase& tc);
 
     class NoteIndentScope {
       public:

@@ -39,8 +39,7 @@ namespace hegel {
             impl::test_case_clone(impl::thread_context(), data_->tc);
         auto cloned = std::unique_ptr<impl::test_case::TestCaseData>(
             new impl::test_case::TestCaseData{
-                handle, data_->is_final, data_->verbosity,
-                data_->stateful_step_count, data_->mode, data_->note_indent,
+                handle, data_->is_final, data_->verbosity, data_->note_indent,
                 data_->in_report, data_->printed_output});
         return TestCase(std::move(cloned));
     }

@@ -34,6 +34,8 @@ namespace hegel::impl {
 
     void settings_set_test_cases(hegel_context_t* ctx, hegel_settings_t* s,
                                  uint64_t test_cases);
+    void settings_set_stateful_step_count(hegel_context_t* ctx,
+                                          hegel_settings_t* s, int64_t n);
     void settings_set_verbosity(hegel_context_t* ctx, hegel_settings_t* s,
                                 hegel_verbosity_t verbosity);
     void settings_set_seed(hegel_context_t* ctx, hegel_settings_t* s,

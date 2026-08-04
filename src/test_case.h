@@ -22,8 +22,6 @@ namespace hegel::impl::test_case {
         hegel_test_case_t* tc;
         bool is_final;
         Verbosity verbosity;
-        int64_t stateful_step_count;
-        Mode mode;
         int note_indent = 0;
         // True while this case's output forms the body of a framed failure
         // report: the body opens with a blank line and sits at note_indent.
