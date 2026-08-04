@@ -1,7 +1,6 @@
 #include <engine.h>
 
 #include <hegel/internal.h>
-#include <hegel/settings.h>
 #include <hegel/test_case.h>
 
 #include <hegel.h>
