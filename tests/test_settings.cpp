@@ -222,6 +222,75 @@ TEST(Settings, DatabaseReplaysFailure) {
     fs::remove_all(db_path);
 }
 
+// ---------------------------------------------------------------------------
+// The database key hegel::test() derives when the caller sets none
+// ---------------------------------------------------------------------------
+
+namespace {
+    std::optional<int64_t> derived_key_value;
+
+    void fail_above_million(hegel::TestCase& tc) {
+        int64_t n = tc.draw(gs::integers<int64_t>());
+        if (n >= 1'000'000) {
+            derived_key_value = n;
+            throw std::runtime_error("n >= 1_000_000");
+        }
+    }
+
+    // Runs the property against `db_path` and reports the value it failed on,
+    // or nothing if it passed. An empty `key` leaves Settings::database_key
+    // unset, so hegel::test() derives one.
+    std::optional<int64_t> run_against(const std::string& db_path,
+                                       const std::vector<hegel::Phase>& phases,
+                                       const std::string& key = "") {
+        derived_key_value = std::nullopt;
+        Settings settings{.database = Database::from_path(db_path),
+                          .phases = phases};
+        if (!key.empty()) {
+            settings.database_key = key;
+        }
+        try {
+            hegel::test(fail_above_million, settings);
+        } catch (const std::runtime_error&) { // NOLINT(bugprone-empty-catch)
+            // expected: the property fails and hegel::test() rethrows
+        }
+        return derived_key_value;
+    }
+} // namespace
+
+// A run that sets no key still persists its counterexample, and a later run
+// replays it. The key is the file and the enclosing GoogleTest test, so
+// naming it explicitly reaches the same stored example.
+TEST(Settings, DerivedDatabaseKeyReplaysFailure) {
+    namespace fs = std::filesystem;
+
+    fs::path db_path = fs::temp_directory_path() /
+                       ("hegel_db_derived_key_" + std::to_string(::getpid()));
+    fs::remove_all(db_path);
+    fs::create_directories(db_path);
+
+    std::optional<int64_t> shrunk =
+        run_against(db_path.string(), hegel::all_phases());
+    ASSERT_TRUE(shrunk.has_value());
+    EXPECT_EQ(shrunk.value(), 1'000'000);
+
+    // Reuse alone runs only what the database holds under the same key.
+    EXPECT_EQ(run_against(db_path.string(), {hegel::Phase::Reuse}), shrunk);
+
+    // The derived key spells out the file and the GoogleTest test.
+    EXPECT_EQ(run_against(db_path.string(), {hegel::Phase::Reuse},
+                          __FILE__
+                          "::Settings.DerivedDatabaseKeyReplaysFailure"),
+              shrunk);
+
+    // Another key is another scope, and holds nothing to replay.
+    EXPECT_FALSE(
+        run_against(db_path.string(), {hegel::Phase::Reuse}, "other-key")
+            .has_value());
+
+    fs::remove_all(db_path);
+}
+
 static int macro_inline_count = 0;
 
 HEGEL_TEST(macro_inline_settings,

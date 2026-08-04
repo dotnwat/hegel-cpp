@@ -42,6 +42,26 @@ namespace {
             no_database());
     }
 
+    // Two `throw`s of one type, so two failure origins. Run in a fresh
+    // process, this shows a throw site staying stable under ASLR: the origin
+    // holds an offset from the enclosing function, never a load address.
+    void scenario_throw_sites() {
+        hegel::test(
+            [](hegel::TestCase& tc) {
+                int32_t x = tc.draw(gs::integers<int32_t>());
+                if (x >= 10 && x % 2 == 0) {
+                    throw std::runtime_error("even bug with x=" +
+                                             std::to_string(x));
+                }
+                if (x >= 10 && x % 2 != 0) {
+                    throw std::runtime_error("odd bug with x=" +
+                                             std::to_string(x));
+                }
+            },
+            hegel::Settings{.report_multiple_failures = true,
+                            .database = hegel::Database::disabled()});
+    }
+
     // Throws a non-std exception (int) for x >= 5.
     void scenario_throw_int() {
         hegel::test(
@@ -140,6 +160,8 @@ int main(int argc, char** argv) {
             scenario_failing();
         } else if (scenario == "stable_origin") {
             scenario_stable_origin();
+        } else if (scenario == "throw_sites") {
+            scenario_throw_sites();
         } else if (scenario == "throw_int") {
             scenario_throw_int();
         } else if (scenario == "throw_custom") {

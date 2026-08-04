@@ -50,25 +50,27 @@
  * namespace gs = hegel::generators;
  *
  * HEGEL_TEST(self_equality)(hegel::TestCase& tc) {
- *     HEGEL_DRAW(tc, n, gs::integers<int>());
+ *     auto n = tc.draw("n", gs::integers<int>());
  *     if (n != n) { // integers should always be equal to themselves
  *         throw std::runtime_error("self-equality failed");
  *     }
  * }
  *
  * int main() {
- *     return hegel::run_all_tests();
+ *     self_equality();
+ *     return 0;
  * }
  * @endcode
  *
  * Now build and run the test. You should see that this test passes.
  *
  * Let's look at what's happening in more detail. @ref HEGEL_TEST defines a
- * property test as an ordinary function, `self_equality`, and registers it
- * with hegel::run_all_tests(), which runs every test defined this way in
- * the binary. You can also invoke the function individually — from `main()`
- * or from any test framework (a GoogleTest `TEST` body, for example).
- * Running the test executes your test body many times (100, by default).
+ * property test as an ordinary function, `self_equality`. Running the test
+ * executes your test body 100 times by default. While you may call the
+ * function from `main()`, if you use a test framework, write the property
+ * inside one of its tests instead. We officially support gtest (see @ref
+ * use_gtest). Please make an issue on Github if Hegel does not integrate well
+ * with your framework.
  *
  * The body receives a @TestCase, which provides a @tc{draw}() method for
  * drawing different values. This test draws a random integer and checks
@@ -76,17 +78,17 @@
  * Hegel's example database, so a failure found in one run is replayed first
  * in the next.
  *
- * @ref HEGEL_DRAW declares the variable and draws into in one step. You should
- * use this macro for drawing values. It records the variable's name so a
- * failing run replays each drawn value with the variable it was assigned to
- * (e.g. `auto n = 42`). The underlying @tc{draw}() call is still available
- * where a macro doesn't fit.
+ * The name you pass to @tc{draw}() labels the value in the failure report, so
+ * a failing run replays each drawn value under the variable it was assigned to
+ * (e.g. `auto n = 42`). Give each draw the name of its variable.
+ * @tc{draw}(gen) without a name prints numbered placeholders
+ * (`auto draw_1 = ...;`) instead.
  *
  * Next, try a test that fails:
  *
  * @code{.cpp}
  * HEGEL_TEST(below_50)(hegel::TestCase& tc) {
- *     HEGEL_DRAW(tc, n, gs::integers<int>());
+ *     auto n = tc.draw("n", gs::integers<int>());
  *     if (n >= 50) { // this will fail!
  *         throw std::runtime_error("n should be below 50");
  *     }
@@ -116,7 +118,8 @@
  *
  * @code{.cpp}
  * HEGEL_TEST(below_50)(hegel::TestCase& tc) {
- *     HEGEL_DRAW(tc, n, gs::integers<int>({.min_value = 0, .max_value = 49}));
+ *     auto n = tc.draw(
+ *         "n", gs::integers<int>({.min_value = 0, .max_value = 49}));
  *     if (n >= 50) {
  *         throw std::runtime_error("n should be below 50");
  *     }
@@ -138,7 +141,7 @@
  * namespace gs = hegel::generators;
  *
  * HEGEL_TEST(push_back_grows)(hegel::TestCase& tc) {
- *     HEGEL_DRAW(tc, vector, gs::vectors(gs::integers<int>()));
+ *     auto vector = tc.draw("vector", gs::vectors(gs::integers<int>()));
  *     auto initial_length = vector.size();
  *     vector.push_back(tc.draw(gs::integers<int>()));
  *     if (vector.size() <= initial_length) {
@@ -202,7 +205,7 @@
  * };
  *
  * HEGEL_TEST(generate_people)(hegel::TestCase& tc) {
- *     HEGEL_DRAW(tc, p, gs::default_generator<Person>());
+ *     auto p = tc.draw("p", gs::default_generator<Person>());
  * }
  * @endcode
  *
@@ -211,33 +214,16 @@
  *
  * @subsection checking_properties Check properties
  *
- * Hegel has three macros for stating what must hold.
- *
- * @ref HEGEL_REQUIRE_EQUAL states that two values are equal:
- *
- * @code{.cpp}
- * HEGEL_TEST(addition_commutes)(hegel::TestCase& tc) {
- *     HEGEL_DRAW(tc, x, gs::integers<int>());
- *     HEGEL_DRAW(tc, y, gs::integers<int>());
- *     HEGEL_REQUIRE_EQUAL(tc, x + y, y + x);
- * }
- * @endcode
- *
- * The report shows a difference of the two values, down to the part that
- * changed, rather than only reporting that they differ.
- *
- * The two values must have the same type, and Hegel must be able to render
- * that type. A type of your own that is not an aggregate struct needs an
- * @c operator<< for a @c std::ostream, or the test does not compile. See
- * @ref HEGEL_REQUIRE_EQUAL for the types Hegel renders on its own.
- *
- * @ref HEGEL_REQUIRE states a condition, with a message the report prints:
+ * A test body states what must hold by throwing when it does not. Any
+ * exception fails the test case, and Hegel then shrinks the values that
+ * caused it:
  *
  * @code{.cpp}
  * HEGEL_TEST(running_sum_stays_positive)(hegel::TestCase& tc) {
- *     HEGEL_DRAW(tc, l, gs::vectors(gs::integers<int>()));
- *     HEGEL_REQUIRE(tc, lowest_running_sum(l) >= 0,
- *                   "running sum went negative");
+ *     auto l = tc.draw("l", gs::vectors(gs::integers<int>()));
+ *     if (lowest_running_sum(l) < 0) {
+ *         throw std::runtime_error("running sum went negative");
+ *     }
  * }
  * @endcode
  *
@@ -247,45 +233,18 @@
  *
  *   auto l = std::vector<int>{-1};
  *
- * Exception: running sum went negative
+ * Exception: std::runtime_error: running sum went negative
  * rerun with: HEGEL_REPRODUCE_FAILURE(running_sum_stays_positive,
  * "AAMAAAABAQAKAQAAAP8BAA==")
  * @endcode
  *
- * @ref HEGEL_FAIL fails outright, where there is no condition to write, such as
- * an unreachable branch, or a step that cannot go on:
+ * The assertion macros of a test framework work too. See @ref use_gtest for
+ * GoogleTest.
  *
- * @code{.cpp}
- * HEGEL_TEST(parses_its_own_output)(hegel::TestCase& tc) {
- *     HEGEL_DRAW(tc, n, gs::integers<int>({.min_value = 0}));
- *     std::optional<int> parsed = parse(render(n));
- *     if (!parsed) {
- *         HEGEL_FAIL(tc, "rendered value did not parse back");
- *     }
- *     HEGEL_REQUIRE_EQUAL(tc, *parsed, n);
- * }
- * @endcode
- *
- * @code{.txt}
- * --- Failure: parses_its_own_output (my_test.cpp:23) --------------------
- * Falsified after 2 test cases (0 discarded):
- *
- *   auto n = 1000;
- *
- * Exception: rendered value did not parse back
- * rerun with: HEGEL_REPRODUCE_FAILURE(parses_its_own_output,
- * "AAEAAAAACgIAAADoAw==")
- * @endcode
- *
- * @ref HEGEL_FAIL does not return, so the branch above needs no value and
- * the code after it may use @c parsed.
- *
- * Prefer these macros over a raw @c throw. Hegel groups counterexamples by
- * origin to tell one bug from another, and a raw throw carries no source
- * position. Every throw of one type therefore shares an origin and reports as a
- * single bug. Each of invocation of these macros count as a different origin,
- * so failures on different lines stay distinct under
- * Settings::report_multiple_failures.
+ * Hegel groups counterexamples by origin to tell one bug from another. The
+ * origin of a thrown exception is its type and the site it was thrown from.
+ * Derive the exception from @ref hegel::FailureOrigin "FailureOrigin" to group
+ * them some other way, but the origin must be stable.
  *
  * @subsection debug_failing Debug your failing test cases
  *
@@ -294,11 +253,13 @@
  *
  * @code{.cpp}
  * HEGEL_TEST(addition_commutes)(hegel::TestCase& tc) {
- *     HEGEL_DRAW(tc, x, gs::integers<int>());
- *     HEGEL_DRAW(tc, y, gs::integers<int>());
+ *     auto x = tc.draw("x", gs::integers<int>());
+ *     auto y = tc.draw("y", gs::integers<int>());
  *     tc.note("x + y = " + std::to_string(x + y) +
  *             ", y + x = " + std::to_string(y + x));
- *     HEGEL_REQUIRE_EQUAL(tc, x + y, y + x);
+ *     if (x + y != y + x) {
+ *         throw std::runtime_error("addition is not commutative");
+ *     }
  * }
  * @endcode
  *
@@ -312,7 +273,7 @@
  *
  * @code{.cpp}
  * HEGEL_TEST(self_equality, {.test_cases = 500})(hegel::TestCase& tc) {
- *     HEGEL_DRAW(tc, n, gs::integers<int>());
+ *     auto n = tc.draw("n", gs::integers<int>());
  *     if (n != n) {
  *         throw std::runtime_error("self-equality failed");
  *     }
@@ -323,24 +284,40 @@
  * Settings when invoking the test (`self_equality({.test_cases = 5})`)
  * replaces them for that run.
  *
- * @subsection plain_function Use hegel::test() directly
+ * @subsection use_gtest Hegel and test frameworks
  *
- * @ref HEGEL_TEST is a macro around hegel::test(), which remains
- * available when a macro doesn't fit — for example to run a lambda or
- * another callable built at runtime:
+ * With a test framework, write the property inside one of its tests and call
+ * hegel::test() with the body. You cannot use @ref HEGEL_TEST there.
  *
  * @code{.cpp}
- * hegel::test([](hegel::TestCase& tc) {
- *     HEGEL_DRAW(tc, n, gs::integers<int>());
- *     if (n != n) {
- *         throw std::runtime_error("self-equality failed");
- *     }
- * }, {.test_cases = 500});
+ * #include <gtest/gtest.h>
+ * #include <hegel/hegel.h>
+ *
+ * TEST(Arithmetic, AdditionCommutes) {
+ *     hegel::test([](hegel::TestCase& tc) {
+ *         auto x = tc.draw("x", gs::integers<int>());
+ *         auto y = tc.draw("y", gs::integers<int>());
+ *         ASSERT_EQ(x + y, y + x);
+ *     });
+ * }
  * @endcode
  *
- * Unlike the macro, hegel::test() cannot derive a name for the test, so
- * set Settings::database_key yourself if you want failures persisted to
- * the example database and replayed across runs.
+ * @code{.txt}
+ * --- Failure: Arithmetic.AdditionCommutes (arithmetic_test.cpp:8) ---
+ * Falsified after 2 test cases (0 discarded):
+ *
+ *   auto x = 51;
+ *   auto y = 0;
+ *
+ * Exception: hegel::GTestFailure: arithmetic_test.cpp:11: Expected: (x + y) ==
+ * (y + x), actual: 51 vs 0
+ * @endcode
+ *
+ * Outside a test framework, use @ref HEGEL_TEST, since it derives the database
+ * key and test location for you. hegel::test() can still be used, but you will
+ * have to set Settings::database_key yourself if you want failures persisted to
+ * the example database. You will also have to pass in TestLocation to see test
+ * location information in the failure output.
  *
  * @subsection learning_more Learning more
  *
@@ -367,18 +344,73 @@
 
 #include <functional>
 
+#if defined(__GNUC__) || defined(__clang__) ||                                 \
+    (defined(_MSC_VER) && _MSC_VER >= 1927)
+#define HEGEL_CALLER_FILE __builtin_FILE()
+#define HEGEL_CALLER_FUNCTION __builtin_FUNCTION()
+#define HEGEL_CALLER_LINE __builtin_LINE()
+#else
+#define HEGEL_CALLER_FILE ""
+#define HEGEL_CALLER_FUNCTION ""
+#define HEGEL_CALLER_LINE 0
+#endif
+
 /** @namespace hegel
  * @brief Main namespace
  */
 namespace hegel {
 
     /**
+     * @brief Interface for an exception that names its own failure origin.
+     *
+     * Hegel groups counterexamples by origin to tell one bug from another.
+     * By default, the origin of a thrown exception is its type and the site it
+     * was thrown from.
+     *
+     * Derive from this interface to define origins some other way. The origin
+     * must be stable.
+     *
+     * @code{.cpp}
+     * class CheckFailed : public std::runtime_error,
+     *                     public hegel::FailureOrigin {
+     *   public:
+     *     CheckFailed(const char* file, int line, const std::string& message)
+     *         : std::runtime_error(message),
+     *           origin_(std::string(file) + ":" + std::to_string(line)) {}
+     *
+     *     std::string failure_origin() const override { return origin_; }
+     *
+     *   private:
+     *     std::string origin_;
+     * };
+     * @endcode
+     *
+     */
+    class FailureOrigin {
+      public:
+        FailureOrigin() = default;
+        virtual ~FailureOrigin() = default;
+        /// Copy-constructs. An origin holds no state of its own.
+        FailureOrigin(const FailureOrigin&) = default;
+        /// Copy-assigns. An origin holds no state of its own.
+        /// @return Reference to this interface.
+        FailureOrigin& operator=(const FailureOrigin&) = default;
+
+        /**
+         * @brief The origin grouping this failure.
+         * @return A string naming the bug this exception stands for.
+         */
+        virtual std::string failure_origin() const = 0;
+    };
+
+    /**
      * @brief Where a test is defined.
      *
      * A failure report names the test and its source line in its header:
      * `--- Failure: my_property (tests/example.cpp:42) ---`. @ref HEGEL_TEST
-     * fills this in from the test's name and position. A caller of
-     * hegel::test() supplies it to get the same header.
+     * fills this in from the test's name and position. A property inside
+     * a GoogleTest test fills this in from that test's name and the line of the
+     * hegel::test() call.
      */
     struct TestLocation {
         /// Test name, as it appears in the report header.
@@ -392,11 +424,16 @@ namespace hegel {
     /**
      * @brief Run a Hegel test.
      *
-     * This is the underlying entry point that @ref HEGEL_TEST (the
-     * recommended way to define a test) expands to. Call it directly when a
-     * macro doesn't fit, e.g. to run a lambda or another callable built at
-     * runtime. In that case, set Settings::database_key yourself if you want
-     * failures persisted to the example database and replayed across runs.
+     * This is the underlying entry point that @ref HEGEL_TEST expands to.
+     *
+     * Settings::database_key defaults to `"<file>::<name>"`, where the file
+     * is the one holding the call and the name is the enclosing GoogleTest
+     * test (`Suite.Name`) or, outside a test framework, the enclosing
+     * function.
+     *
+     * Inside a GoogleTest test the failure report's header names that test
+     * and the line of the call. Outside one it reads `--- Failure ---`. Pass
+     * a TestLocation to the overload below to name it yourself.
      *
      * @code{.cpp}
      * #include "hegel/hegel.h"
@@ -425,18 +462,26 @@ namespace hegel {
      * @param failure_blobs The base64 blobs encoding the engine choices that
      led to failures. Multiple blobs can be passed in for bookkeeping, but only
      the first one is run.
+     * @param caller_file Filled in by the compiler with the file of the call.
+     * @param caller_function Filled in by the compiler with the function
+     *                        holding the call.
+     * @param caller_line Filled in by the compiler with the line of the call.
      * @throws std::runtime_error if any test case fails
      * @see Settings for configuration settings
      */
     void test(const std::function<void(TestCase&)>& test_fn,
               const Settings& settings = {},
-              const std::vector<std::string>& failure_blobs = {});
+              const std::vector<std::string>& failure_blobs = {},
+              const char* caller_file = HEGEL_CALLER_FILE,
+              const char* caller_function = HEGEL_CALLER_FUNCTION,
+              int caller_line = HEGEL_CALLER_LINE);
 
     /**
      * @brief Run a Hegel test that names itself in its failure report.
      *
      * Behaves like the overload above. The failure report's header names
-     * @p location's test and source line instead of reading `--- Failure ---`.
+     * @p location's test and source line instead of reading `--- Failure ---`,
+     * and Settings::database_key defaults to the location's file and name.
      *
      * @code{.cpp}
      * hegel::test(my_body, {"my_property", __FILE__, __LINE__},
@@ -455,29 +500,22 @@ namespace hegel {
               const TestLocation& location, const Settings& settings = {},
               const std::vector<std::string>& failure_blobs = {});
 
-    /**
-     * @brief Run every test defined with @ref HEGEL_TEST in this binary.
-     *
-     * Each test runs with its inline settings.
-     *
-     * @code{.cpp}
-     * int main() {
-     *     return hegel::run_all_tests();
-     * }
-     * @endcode
-     *
-     * @return 0 if every test passed, 1 otherwise
-     */
-    int run_all_tests();
-
     /// @cond INTERNAL
     namespace internal {
-        // Adds a HEGEL_TEST to the run_all_tests() registry during static
-        // initialization; always returns true.
-        // the only way the HEGEL_TEST macro can make something run before
-        // main() is to hang the call off the initializer of a namespace-scope
-        // variable
-        bool register_test(const char* name, void (*run)());
+        // How a test framework passes information to Hegel
+        struct FrameworkHooks {
+            // Names the framework test that runs now, or "" outside one.
+            std::string (*current_test_name)() = nullptr;
+            // Runs one test-case body, raising the failed assertions the
+            // framework recorded.
+            void (*run_case)(const std::function<void()>&) = nullptr;
+        };
+
+        // Makes `hooks` the integration every later run uses. Returns true, so
+        // an integration header can install from a variable initializer and
+        // have it happen before main().
+        bool install_framework_hooks(const FrameworkHooks& hooks);
+
         // add a blob for a test to run
         bool register_blob(const char* name, std::vector<const char*> blobs);
         // look up the failure blobs associated with a test
@@ -511,8 +549,9 @@ namespace hegel {
  * function's default argument, and settings passed at the call site replace
  * them entirely.
  *
- * The test is also registered with the test runtime, so all Hegel tests within
- * a translation unit can be run with hegel::run_all_tests().
+ * With a test framework, write the property inside one of its tests and call
+ * hegel::test() instead. If you use HEGEL_TEST, it must be used outside of
+ * the test framework's test macro/function then call the named Hegel test.
  *
  * @code{.cpp}
  * HEGEL_TEST(addition_commutes, {.test_cases = 500})(hegel::TestCase& tc) {
@@ -524,9 +563,11 @@ namespace hegel {
  *     }
  * }
  *
- * // invoke from main() or any test framework:
- * addition_commutes();                  // runs with .test_cases = 500
- * addition_commutes({.test_cases = 5}); // call-site Settings take over
+ * int main() {
+ *     addition_commutes();                  // runs with .test_cases = 500
+ *     addition_commutes({.test_cases = 5}); // call-site Settings take over
+ *     return 0;
+ * }
  * @endcode
  *
  * @see HEGEL_REPRODUCE_FAILURE to replay a specific failing example.
@@ -543,184 +584,7 @@ namespace hegel {
             ::hegel::TestLocation{#name, __FILE__, __LINE__}, settings,        \
             ::hegel::internal::reproduce_blobs_for(__FILE__ "::" #name));      \
     }                                                                          \
-    [[maybe_unused]] static const bool hegel_test_registered_##name =          \
-        ::hegel::internal::register_test(__FILE__ "::" #name, [] { name(); }); \
     static void hegel_test_body_##name
-
-/**
- * @brief Draw a value into a named local variable.
- *
- * Expands to `auto var = tc.draw("var", gen)`, so failure output prints the
- * draw under the variable's own name:
- *
- * @code{.cpp}
- * HEGEL_TEST(addition_commutes)(hegel::TestCase& tc) {
- *     HEGEL_DRAW(tc, x, gs::integers<int>());
- *     HEGEL_DRAW(tc, y, gs::integers<int>());
- *     if (x + y != y + x) throw std::runtime_error("not commutative");
- * }
- * // replay output: auto x = 10;
- * //                auto y = 3;
- * @endcode
- *
- * Prefer this macro over a plain @tc{draw}() for every draw bound to a
- * variable, since it includes the variable name in the counterexample printing.
- *
- * The name prints bare on every use. To number repeated draws instead
- * (`var_1`, `var_2`, ...), call `tc.draw("name", gen, true)`.
- *
- * @param tc The current hegel::TestCase.
- * @param var Name of the local variable to declare.
- * @param ... The generator expression to draw from.
- */
-#define HEGEL_DRAW(tc, var, ...) auto var = (tc).draw(#var, (__VA_ARGS__))
-
-/// @cond INTERNAL
-// Stringification takes two steps because `#` reads its argument before any
-// macro in it expands. `HEGEL_INTERNAL_STRINGIFY_(__LINE__)` alone therefore
-// gives "__LINE__". Passing the argument through a macro that does not apply
-// `#` expands it first, so the second macro stringifies the line number.
-#define HEGEL_INTERNAL_STRINGIFY_(x) #x
-#define HEGEL_INTERNAL_STRINGIFY(x) HEGEL_INTERNAL_STRINGIFY_(x)
-
-// The call site, which the engine uses to tell one requirement from another.
-// The three parts join into one string literal at compile time.
-//
-// `#` applies only to a parameter of a macro that takes parameters, so this
-// macro cannot stringify __LINE__ itself. A bare `#__LINE__` here leaves the
-// `#` in the token stream and fails to compile.
-#define HEGEL_INTERNAL_ORIGIN __FILE__ ":" HEGEL_INTERNAL_STRINGIFY(__LINE__)
-/// @endcond
-
-/**
- * @brief Fail the current test case with @p message.
- *
- * @code{.cpp}
- * HEGEL_TEST(parser_accepts_its_own_output)(hegel::TestCase& tc) {
- *     HEGEL_DRAW(tc, doc, document_generator());
- *     auto reparsed = parse(render(doc));
- *     if (!reparsed) {
- *         HEGEL_FAIL(tc, "rendered document did not parse back");
- *     }
- * }
- * @endcode
- *
- * The macro does not return.
- *
- * Prefer this over a raw @c throw. Hegel groups counterexamples by origin to
- * tell one bug from another, and a raw throw carries no source position. Every
- * throw of one type therefore shares an origin and reports as a single bug.
- * Each @c HEGEL_FAIL counts as a different origin, so failures on different
- * lines stay distinct under Settings::report_multiple_failures.
- *
- * @param tc The current hegel::TestCase.
- * @param ... The optional failure message. Without one the report reads
- *            `fail: test case failed`.
- */
-// The message is taken as trailing arguments rather than as one named
-// parameter so that it may hold a comma the preprocessor would otherwise
-// split on, as in a template argument list. __VA_ARGS__ puts those commas
-// back. __VA_OPT__ drops the comma before it when no message is given, which
-// is what makes the message optional.
-#define HEGEL_FAIL(tc, ...)                                                    \
-    ::hegel::internal::fail_impl((tc), HEGEL_INTERNAL_ORIGIN __VA_OPT__(, )    \
-                                           __VA_ARGS__)
-
-/**
- * @brief Fail the current test case unless @p condition holds.
- *
- * @code{.cpp}
- * HEGEL_TEST(sum_stays_positive)(hegel::TestCase& tc) {
- *     HEGEL_DRAW(tc, l, gs::vectors(gs::integers<int>({.min_value = 0})));
- *     HEGEL_REQUIRE(tc, running_sum(l) >= 0, "sum must stay non-negative");
- * }
- * @endcode
- *
- * The report prints the message in its `Exception:` line. Without one it
- * reads `require: condition was false`.
- *
- * @param tc The current hegel::TestCase.
- * @param ... The condition, and an optional message.
- */
-#define HEGEL_REQUIRE(tc, ...)                                                 \
-    ::hegel::internal::require_impl((tc), HEGEL_INTERNAL_ORIGIN, __VA_ARGS__)
-
-/**
- * @brief Fail the current test case unless two values are equal.
- *
- * @code{.cpp}
- * HEGEL_TEST(addition_commutes)(hegel::TestCase& tc) {
- *     HEGEL_DRAW(tc, x, gs::integers<int>());
- *     HEGEL_DRAW(tc, y, gs::integers<int>());
- *     HEGEL_REQUIRE_EQUAL(tc, x + y, y + x);
- * }
- * @endcode
- *
- * Prefer this over @ref HEGEL_REQUIRE for an equality property. The report
- * says how the two values differ.
- *
- * @code{.txt}
- * require_equal: values differ (- lhs / + rhs):
- *   Team{
- *     .name = std::string("a"),
- *     .scores = std::vector<int>{
- *       1,
- * -     2,
- * +     9,
- *       3,
- *     },
- *   }
- * @endcode
- *
- * The values are compared as Hegel renders them for the report.
- *
- * Hegel must also be able to render the type. A type it cannot render does
- * not compile:
- *
- * @code{.txt}
- * error: static assertion failed: HEGEL_REQUIRE_EQUAL needs a type Hegel can
- * render. Give it an operator<<, or compare its parts instead.
- * @endcode
- *
- * Hegel renders these types on its own:
- *
- * - the arithmetic types (@c bool, the character types, the integer types,
- *   the floating-point types) and enumerations
- * - @c std::string
- * - @c std::optional, @c std::pair, @c std::tuple, @c std::variant and
- *   @c std::monostate
- * - @c std::vector, @c std::set, @c std::map and @c std::array
- * - any nesting of the types above
- * - aggregate structs, through reflection. This needs a build with
- *   `HEGEL_REFLECTION` on, which is the default. Without reflection an
- *   aggregate struct is subject to the rule below.
- *
- * A type that is not in that list needs an @c operator<< that writes it to a
- * @c std::ostream:
- *
- * @code{.cpp}
- * class Point {
- *   public:
- *     Point(int x, int y) : x_(x), y_(y) {}
- *
- *     friend std::ostream& operator<<(std::ostream& os, const Point& p) {
- *         return os << "Point(" << p.x_ << ", " << p.y_ << ")";
- *     }
- *
- *   private:
- *     int x_;
- *     int y_;
- * };
- * @endcode
- *
- * Where a type cannot get an @c operator<<, compare its parts instead.
- *
- * @param tc The current hegel::TestCase.
- * @param ... The two values to compare and an optional message.
- */
-#define HEGEL_REQUIRE_EQUAL(tc, ...)                                           \
-    ::hegel::internal::require_equal_impl((tc), HEGEL_INTERNAL_ORIGIN,         \
-                                          __VA_ARGS__)
 
 /**
  * @brief Replay a failing example for a @ref HEGEL_TEST from its blob.
@@ -751,3 +615,9 @@ namespace hegel {
         ::hegel::internal::register_blob(__FILE__ "::" #name,                  \
                                          {blob, __VA_ARGS__});
 /** @} */
+
+// GoogleTest integration, picked up when <gtest/gtest.h> is already visible.
+// Include <hegel/gtest.h> yourself if this header comes first.
+#if defined(GTEST_TEST)
+#include "gtest.h"
+#endif

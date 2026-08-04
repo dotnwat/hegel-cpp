@@ -104,7 +104,8 @@ namespace hegel::stateful {
                     hegel::stateful::Rule<Allocator>(
                         "free", [](hegel::TestCase& tc, Allocator& m) {
                             // draws a handle a prior alloc put in the pool
-                            HEGEL_DRAW(tc, h,
+                            auto h = tc.draw(
+                                "h",
                                 hegel::stateful::values_consumed(m.handles));
                             m.state.erase(h);
                         }),
@@ -221,8 +222,9 @@ namespace hegel::stateful {
      * @code{.cpp}
         HEGEL_TEST(pool_round_trip)(hegel::TestCase& tc) {
             hegel::stateful::Pool<int> pool(tc);
-            HEGEL_DRAW(tc, original_set,
-                       gs::sets(gs::integers<int>(), {.max_size = 10}));
+            auto original_set = tc.draw(
+                "original_set", gs::sets(gs::integers<int>(), {.max_size =
+     10}));
 
             for (int num : original_set) {
                 pool.add(num);
@@ -252,9 +254,10 @@ namespace hegel::stateful {
      * @code{.cpp}
         HEGEL_TEST(pool_reuse)(hegel::TestCase& tc) {
             hegel::stateful::Pool<int> pool(tc);
-            HEGEL_DRAW(tc, sz, gs::integers<uint8_t>());
-            HEGEL_DRAW(tc, original_set,
-                       gs::sets(gs::integers<int>(), {.max_size = sz}));
+            auto sz = tc.draw("sz", gs::integers<uint8_t>());
+            auto original_set = tc.draw(
+                "original_set", gs::sets(gs::integers<int>(), {.max_size =
+     sz}));
 
             for (int num : original_set) {
                 pool.add(num);

@@ -1,4 +1,4 @@
---- Failure ------------------------------------------------------------
+--- Failure: FailureReport.DiscardedCasesAreCounted ([location]) ---
 Falsified after 1 test case (3 discarded):
 
   auto draw_1 = 1;
