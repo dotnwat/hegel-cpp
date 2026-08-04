@@ -244,7 +244,9 @@ namespace hegel {
         /// backend overrides the automatic detection.
         Backend backend = Backend::Auto;
 
-        /// The maximum number of steps a stateful run attempts.
+        /// The maximum number of steps a stateful test case attempts. Each
+        /// case runs at least one step and at most this many. Must be at
+        /// least 1.
         int64_t stateful_step_count = 50;
     };
 } // namespace hegel
