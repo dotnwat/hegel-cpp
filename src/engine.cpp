@@ -1,7 +1,6 @@
 #include <engine.h>
 
 #include <hegel/internal.h>
-#include <hegel/settings.h>
 #include <hegel/test_case.h>
 
 #include <hegel.h>
@@ -82,6 +81,11 @@ namespace hegel::impl {
     void settings_set_test_cases(hegel_context_t* ctx, hegel_settings_t* s,
                                  uint64_t test_cases) {
         check_rc(ctx, hegel_settings_set_test_cases(ctx, s, test_cases));
+    }
+
+    void settings_set_stateful_step_count(hegel_context_t* ctx,
+                                          hegel_settings_t* s, int64_t n) {
+        check_rc(ctx, hegel_settings_set_stateful_step_count(ctx, s, n));
     }
 
     void settings_set_verbosity(hegel_context_t* ctx, hegel_settings_t* s,
@@ -519,8 +523,9 @@ namespace hegel::internal {
                       HEGEL_LABEL_SAMPLED_FROM);
         static_assert(static_cast<uint64_t>(SpanLabel::EnumVariant) ==
                       HEGEL_LABEL_ENUM_VARIANT);
-        static_assert(static_cast<uint64_t>(SpanLabel::StatefulRule) >
-                      HEGEL_LABEL_STRING);
+        static_assert(static_cast<uint64_t>(SpanLabel::StatefulRule) ==
+                      HEGEL_LABEL_STATEFUL_RULE);
+        static_assert(state_machine_done == HEGEL_STATE_MACHINE_DONE);
 
         // Two's-complement little-endian encoding of a uint64_t for the
         // engine's big-integer draw: 9 bytes so the top bit is never read
@@ -668,14 +673,6 @@ namespace hegel::internal {
             hegel_pool_generate(scope.ctx, scope.tc, pool_id, consume, &var_id),
             "hegel_pool_generate");
         return var_id;
-    }
-
-    bool is_single_test_case(const TestCase& tc) {
-        return tc.data()->mode == Mode::SingleTestCase;
-    }
-
-    int64_t stateful_step_count(const TestCase& tc) {
-        return tc.data()->stateful_step_count;
     }
 
     int64_t draw_rule(const TestCase& tc, int64_t state_machine_id) {

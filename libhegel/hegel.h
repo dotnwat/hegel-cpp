@@ -77,6 +77,13 @@
 #include <stdint.h>
 
 /*
+ Value written to `*out_rule_index` by `hegel_state_machine_next_rule`
+ when the engine's step budget for the test case is exhausted: stop
+ running rules.
+ */
+#define HEGEL_STATE_MACHINE_DONE -1
+
+/*
  Result of a libhegel call.
 
  Every entry point returns one of these except `hegel_context_new` (which
@@ -379,6 +386,12 @@ typedef enum {
      text generator).
      */
     HEGEL_LABEL_STRING = 30,
+    /*
+     Outer span around one stateful-testing rule invocation, grouping all
+     the draws a single rule makes so the shrinker can delete a whole step
+     at once. Opened by the frontend's state-machine driver.
+     */
+    HEGEL_LABEL_STATEFUL_RULE = 31,
 } hegel_label_t;
 
 /*
@@ -502,9 +515,10 @@ typedef struct hegel_failure_t hegel_failure_t;
  `hegel_run_start` returns one of these. The caller pulls test cases
  out via `hegel_next_test_case` until it writes NULL through its out
  parameter, then reads the aggregated outcome via `hegel_run_result`,
- and finally frees the handle with `hegel_run_free`. The engine runs
- on a separate worker thread inside libhegel; the handle owns the
- channel that ferries test cases between caller and worker.
+ and finally frees the handle with `hegel_run_free`. There is no
+ background thread: the handle owns the suspended engine as a future,
+ and each `hegel_next_test_case` call resumes it on the calling thread
+ until it offers the next test case (or finishes).
 
  Unlike test-case handles (which detect and reject concurrent use),
  a run handle must only be used from one thread at a time: calling
@@ -740,6 +754,16 @@ hegel_result_t hegel_settings_set_test_cases(hegel_context_t* ctx,
                                              hegel_settings_t* s, uint64_t n);
 
 /*
+ Target number of steps to run per stateful test case. The default is
+ 50. Each stateful case runs at least one step and at most `n`; the
+ engine chooses where in that range to stop. `n` must be at least 1.
+ A smaller value is a reportable `HEGEL_E_INVALID_ARG`.
+ */
+hegel_result_t hegel_settings_set_stateful_step_count(hegel_context_t* ctx,
+                                                      hegel_settings_t* s,
+                                                      int64_t n);
+
+/*
  Set the engine's output verbosity. `v` is a `hegel_verbosity_t` value;
  the parameter is typed as `uint32_t` so an out-of-range value is a
  reportable `HEGEL_E_INVALID_ARG` instead of undefined behavior.
@@ -824,28 +848,29 @@ hegel_result_t hegel_settings_set_suppress_health_check(hegel_context_t* ctx,
  Start a property-test run with the given settings, writing a handle the
  caller pulls test cases out of via `hegel_next_test_case` into `*out_run`.
 
- The engine runs on a worker thread inside libhegel; this function
- returns immediately after spawning it. The caller does not need to
- hold the settings handle alive — `hegel_run_start` snapshots the
- settings it needs.
+ This only builds the run: no test case is generated until the first
+ `hegel_next_test_case` call, and all engine work happens on the thread
+ making those calls. The caller does not need to hold the settings handle
+ alive — `hegel_run_start` snapshots the settings it needs.
 
  `callback` sets where the engine's output for this run goes: each line is
  delivered to it (with `user_data` passed through verbatim) instead of
  stderr, once per line, NUL-terminated UTF-8 of `len` bytes without a
  trailing newline, in a buffer owned by libhegel and valid only for the
  duration of the call. A NULL `callback` leaves the run's output on stderr
- (`user_data` is ignored). The engine emits from its worker thread, so the
- callback must be safe to invoke from a thread other than this one, and it
- — along with whatever `user_data` points to — must stay valid until the
- run has been freed with `hegel_run_free`. This sets only the
+ (`user_data` is ignored). The engine emits while it runs inside
+ `hegel_next_test_case`, so the callback is invoked on whichever thread
+ makes that call, and it — along with whatever `user_data` points to —
+ must stay valid until the run has been freed with `hegel_run_free`.
+ Because it runs inside `hegel_next_test_case`, while the run handle is in
+ use, the callback must not call back into libhegel on the same run (e.g.
+ `hegel_next_test_case` or `hegel_run_free`). This sets only the
  *destination*; how much output the engine emits is controlled by
  `hegel_settings_set_verbosity`.
 
- Returns `HEGEL_E_INVALID_ARG` for a NULL `out_run`,
- `HEGEL_E_INVALID_HANDLE` for a NULL `settings`, or `HEGEL_E_BACKEND` if the
- worker thread cannot be spawned (with a diagnostic in
- `hegel_context_last_error`). The handle written to `*out_run` must be freed
- with `hegel_run_free`.
+ Returns `HEGEL_E_INVALID_ARG` for a NULL `out_run` or
+ `HEGEL_E_INVALID_HANDLE` for a NULL `settings`. The handle written to
+ `*out_run` must be freed with `hegel_run_free`.
  */
 hegel_result_t hegel_run_start(hegel_context_t* ctx,
                                const hegel_settings_t* settings,
@@ -853,8 +878,8 @@ hegel_result_t hegel_run_start(hegel_context_t* ctx,
                                void* user_data, hegel_run_t** out_run);
 
 /*
- Block until the engine produces the next test case, writing a handle for it
- into `*out_test_case`.
+ Run the engine on the calling thread until it produces the next test case,
+ writing a handle for it into `*out_test_case`.
 
  The handle is owned by the caller and must be released with
  `hegel_test_case_free` (the run keeps its own internal reference, so freeing
@@ -865,6 +890,10 @@ hegel_result_t hegel_run_start(hegel_context_t* ctx,
  normal completion: `HEGEL_E_NOT_COMPLETE` if the previous test case was not
  marked complete (call `hegel_mark_complete` first), `HEGEL_E_INVALID_HANDLE`
  for a NULL `run`, or `HEGEL_E_INVALID_ARG` for a NULL `out_test_case`.
+
+ All engine work between test cases — generation, mutation, shrinking —
+ happens inside this call, so a call may take a while when the engine has
+ exploring to do.
  */
 hegel_result_t hegel_next_test_case(hegel_context_t* ctx, hegel_run_t* run,
                                     hegel_test_case_t** out_test_case);
@@ -900,10 +929,9 @@ hegel_result_t hegel_run_result_free(hegel_context_t* ctx,
  they are released with their own frees.
 
  If the caller exited its test loop early (e.g. with a still-active
- test case), this drains the worker thread cleanly: any in-flight
- test case is marked complete, the abort flag is set so the worker
- short-circuits, and the worker is joined before the handle is
- destroyed.
+ test case), any in-flight test case is marked complete and the rest of
+ the exploration is simply dropped — the engine was suspended waiting for
+ the next `hegel_next_test_case` call, so there is nothing to wind down.
  */
 hegel_result_t hegel_run_free(hegel_context_t* ctx, hegel_run_t* run);
 
@@ -912,7 +940,7 @@ hegel_result_t hegel_run_free(hegel_context_t* ctx, hegel_run_t* run);
  base64 failure blob (obtained from `hegel_failure_reproduction_blob` on a
  prior run).
 
- There is no run handle and no engine worker: the caller drives the
+ There is no run handle and no engine run: the caller drives the
  returned test case with the usual per-test-case primitives
  (the `hegel_generate_*` draws, spans, …), concludes it with
  `hegel_mark_complete`, and decides for itself whether the blob reproduced the
@@ -928,8 +956,8 @@ hegel_result_t hegel_run_free(hegel_context_t* ctx, hegel_run_t* run);
  passed through verbatim) instead of stderr, NUL-terminated UTF-8 of `len`
  bytes without a trailing newline, in a buffer valid only for the duration
  of the call. A NULL `callback` leaves the replay's output on stderr
- (`user_data` is ignored). There is no worker thread, so the callback is
- only ever invoked on this thread and need not outlive this call.
+ (`user_data` is ignored). The callback is only ever invoked on this
+ thread and need not outlive this call.
 
  Returns `HEGEL_E_INVALID_HANDLE` for a NULL `s`, or `HEGEL_E_INVALID_ARG`
  for a NULL `out_test_case`, a NULL `blob`, or a `blob` that is not a valid
@@ -1110,7 +1138,8 @@ hegel_result_t hegel_pool_generate(hegel_context_t* ctx, hegel_test_case_t* tc,
  random subset of rules (at least one) and selection draws only from
  that subset. The caller drives execution: it asks
  `hegel_state_machine_next_rule` which rule to run at each step and
- applies it.
+ applies it, until that call signals that no more steps should
+ follow.
 
  On success writes the new machine's id into `*out_state_machine_id`
  and returns `HEGEL_OK`. The id is opaque; pass it to subsequent
@@ -1132,8 +1161,7 @@ hegel_new_state_machine(hegel_context_t* ctx, hegel_test_case_t* tc,
  of the test case, with restrictions that shrink away in minimal
  counterexamples.
 
- On success writes the chosen rule index into `*out_rule_index` and
- returns `HEGEL_OK`. `state_machine_id` must be an id returned by
+ `state_machine_id` must be an id returned by
  `hegel_new_state_machine` on this test case. Returns
  `HEGEL_E_STOP_TEST` when the engine's choice budget is exhausted
  (the caller should abort the body and call `hegel_mark_complete`

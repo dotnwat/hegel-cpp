@@ -276,7 +276,6 @@ namespace hegel {
         // a framed report's body: it opens with a blank line and is indented.
         BodyOutcome replay_failure(hegel_context_t* ctx, hegel_settings_t* s,
                                    const char* blob, Verbosity verbosity,
-                                   int64_t stateful_step_count, Mode mode,
                                    bool in_report,
                                    const std::function<void(TestCase&)>& fn,
                                    bool* printed_output = nullptr) {
@@ -292,8 +291,8 @@ namespace hegel {
             // TU stays clean under a C++17 (HEGEL_REFLECTION=OFF) build.
             TestCase tc_obj(std::unique_ptr<impl::test_case::TestCaseData>(
                 new impl::test_case::TestCaseData{
-                    handle, /*is_final=*/true, verbosity, stateful_step_count,
-                    mode, /*note_indent=*/in_report ? 1 : 0, in_report}));
+                    handle, /*is_final=*/true, verbosity,
+                    /*note_indent=*/in_report ? 1 : 0, in_report}));
             BodyOutcome outcome = run_body(fn, tc_obj);
             if (printed_output != nullptr) {
                 *printed_output = *tc_obj.data()->printed_output;
@@ -364,6 +363,8 @@ namespace hegel {
                             const Settings& settings) {
             impl::settings_set_test_cases(ctx, s,
                                           settings.test_cases.value_or(100));
+            impl::settings_set_stateful_step_count(
+                ctx, s, settings.stateful_step_count);
 
             hegel_verbosity_t v = HEGEL_VERBOSITY_NORMAL;
             switch (settings.verbosity) {
@@ -491,9 +492,9 @@ namespace hegel {
             }
             bool quiet = settings.verbosity == Verbosity::Quiet;
             bool printed_output = false;
-            BodyOutcome outcome = replay_failure(
-                ctx, s, blob, settings.verbosity, settings.stateful_step_count,
-                settings.mode, /*in_report=*/!quiet, test_fn, &printed_output);
+            BodyOutcome outcome =
+                replay_failure(ctx, s, blob, settings.verbosity,
+                               /*in_report=*/!quiet, test_fn, &printed_output);
             if (outcome.status != HEGEL_STATUS_INTERESTING) {
                 // GCOVR_EXCL_START
                 throw std::runtime_error(flaky_diagnostic);
@@ -514,7 +515,6 @@ namespace hegel {
             // one is run like in the other Hegel libraries
             BodyOutcome outcome = replay_failure(
                 ctx, s, failure_blobs.front().c_str(), settings.verbosity,
-                settings.stateful_step_count, settings.mode,
                 /*in_report=*/false, test_fn);
 
             if (outcome.exception == nullptr) {
@@ -551,8 +551,7 @@ namespace hegel {
                 }
                 TestCase tc_obj(std::unique_ptr<impl::test_case::TestCaseData>(
                     new impl::test_case::TestCaseData{
-                        handle, /*is_final=*/false, settings.verbosity,
-                        settings.stateful_step_count, settings.mode}));
+                        handle, /*is_final=*/false, settings.verbosity}));
                 BodyOutcome outcome = run_body(test_fn, tc_obj);
                 if (!seen_interesting) {
                     if (outcome.status == HEGEL_STATUS_INTERESTING) {

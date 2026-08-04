@@ -40,7 +40,7 @@ namespace hegel::internal {
         Mapped = 13,
         SampledFrom = 14,
         EnumVariant = 15,
-        StatefulRule = 1000
+        StatefulRule = 31
     };
 
     // Open / close a labeled span around a group of draws so the shrinker
@@ -76,12 +76,11 @@ namespace hegel::internal {
     int64_t new_pool(const TestCase& tc);
     int64_t pool_add(const TestCase& tc, int64_t pool_id);
     int64_t draw_variable(const TestCase& tc, int64_t pool_id, bool consume);
+    inline constexpr int64_t state_machine_done = -1;
     int64_t draw_rule(const TestCase& tc, int64_t state_machine_id);
     int64_t new_state_machine(const TestCase& tc,
                               const std::vector<std::string>& rule_names,
                               const std::vector<std::string>& invariant_names);
-    bool is_single_test_case(const TestCase& tc);
-    int64_t stateful_step_count(const TestCase& tc);
 
     class NoteIndentScope {
       public:
