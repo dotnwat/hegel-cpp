@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.11.1 - 2026-08-04
+
+This patch bumps our pinned `libhegel` ([hegel-rust](hegeldev/hegel-rust)) from [0.29.0](https://github.com/hegeldev/hegel-rust/releases/tag/v0.29.0) to [0.30.5](https://github.com/hegeldev/hegel-rust/releases/tag/v0.30.5).
+
 ## 0.11.0 - 2026-08-04
 
 This release replaces the Hegel test framework with an opt-in GTest integration.
