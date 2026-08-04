@@ -519,8 +519,9 @@ namespace hegel::internal {
                       HEGEL_LABEL_SAMPLED_FROM);
         static_assert(static_cast<uint64_t>(SpanLabel::EnumVariant) ==
                       HEGEL_LABEL_ENUM_VARIANT);
-        static_assert(static_cast<uint64_t>(SpanLabel::StatefulRule) >
-                      HEGEL_LABEL_STRING);
+        static_assert(static_cast<uint64_t>(SpanLabel::StatefulRule) ==
+                      HEGEL_LABEL_STATEFUL_RULE);
+        static_assert(state_machine_done == HEGEL_STATE_MACHINE_DONE);
 
         // Two's-complement little-endian encoding of a uint64_t for the
         // engine's big-integer draw: 9 bytes so the top bit is never read

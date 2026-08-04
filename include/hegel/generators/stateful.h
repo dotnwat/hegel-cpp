@@ -3,9 +3,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <functional>
-#include <limits>
 #include <map>
-#include <optional>
 #include <stdexcept>
 #include <string>
 #include <type_traits>
@@ -521,10 +519,6 @@ namespace hegel::stateful {
             throw std::invalid_argument(
                 "Cannot run a state machine with no rules.");
         }
-        bool is_single = internal::is_single_test_case(tc);
-        int64_t max_steps = is_single ? std::numeric_limits<int64_t>::max()
-                                      : internal::stateful_step_count(tc);
-
         std::vector<std::string> rule_names;
         rule_names.reserve(rules.size());
         for (const Rule<M>& rule : rules)
@@ -538,69 +532,44 @@ namespace hegel::stateful {
         print_state(tc, machine, params);
         check_invariants(tc, "in the initial state", machine, invariants);
 
-        auto must_stop = [=](int64_t steps_run) -> std::optional<bool> {
-            if (is_single) {
-                return false;
-            }
-            if (steps_run >= max_steps) {
-                return true;
-            }
-            if (steps_run <= 0) {
-                return false;
-            }
-            return std::nullopt;
-        };
         int64_t state_machine_id =
             internal::new_state_machine(tc, rule_names, invariant_names);
         int64_t steps_run = 0;
-        int64_t num_steps_succeeded = 0;
-        constexpr double p_stop = 1.0 / 65536.0; // 2^-16
 
         while (true) {
             internal::start_span(tc, internal::SpanLabel::StatefulRule);
-            // gives engine more control of when to stop generating steps
-            if (internal::draw_boolean(tc, p_stop, must_stop(steps_run))) {
-                internal::stop_span(tc);
-                if (num_steps_succeeded == 0) {
-                    tc.reject();
-                }
+            int64_t next_rule_idx = internal::draw_rule(tc, state_machine_id);
+            if (next_rule_idx == internal::state_machine_done) {
                 break;
-            } else {
-                steps_run++;
-                try {
-                    int64_t next_rule_idx =
-                        internal::draw_rule(tc, state_machine_id);
-                    // GCOVR_EXCL_START
-                    if (next_rule_idx < 0 ||
-                        static_cast<size_t>(next_rule_idx) >= rules.size()) {
-                        throw std::runtime_error(
-                            "state_machine_next_rule returned out-of-range "
-                            "rule index. Please report this as a bug.");
-                    }
-                    // GCOVR_EXCL_STOP
-                    const Rule<M>& rule =
-                        rules[static_cast<size_t>(next_rule_idx)];
-                    tc.note("Step " + std::to_string(steps_run) + ": " +
-                            rule.name());
+            }
+            // GCOVR_EXCL_START
+            if (next_rule_idx < 0 ||
+                static_cast<size_t>(next_rule_idx) >= rules.size()) {
+                throw std::runtime_error(
+                    "state_machine_next_rule returned out-of-range "
+                    "rule index. Please report this as a bug.");
+            }
+            // GCOVR_EXCL_STOP
+            steps_run++;
+            const Rule<M>& rule = rules[static_cast<size_t>(next_rule_idx)];
+            tc.note("Step " + std::to_string(steps_run) + ": " + rule.name());
 
-                    // nest the draws the step makes under its "Step N" header.
-                    {
-                        internal::NoteIndentScope indent(tc);
-                        rule.step()(tc, machine);
-                    }
-                    print_state(tc, machine, params);
-                    check_invariants(tc,
-                                     "after step " + std::to_string(steps_run),
-                                     machine, invariants);
-                    internal::stop_span(tc);
-                    num_steps_succeeded++;
-                } catch (const internal::HegelReject&) {
-                    tc.note("Rule stopped early due to violated assumption.");
-                    internal::stop_span(tc, true);
-                } catch (...) {
-                    internal::stop_span(tc);
-                    throw;
+            try {
+                // nest the draws the step makes under its "Step N" header.
+                {
+                    internal::NoteIndentScope indent(tc);
+                    rule.step()(tc, machine);
                 }
+                print_state(tc, machine, params);
+                check_invariants(tc, "after step " + std::to_string(steps_run),
+                                 machine, invariants);
+                internal::stop_span(tc);
+            } catch (const internal::HegelReject&) {
+                tc.note("Rule stopped early due to violated assumption.");
+                internal::stop_span(tc, true);
+            } catch (...) {
+                internal::stop_span(tc);
+                throw;
             }
         }
     }

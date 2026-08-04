@@ -231,6 +231,29 @@ TEST(Stateful, SingleModeRunsUntilRuleStops) {
                  std::runtime_error);
 }
 
+// The engine stops each case after at most stateful_step_count steps, so
+// a rule that fails only on step 100 never gets there.
+TEST(Stateful, StepCountCapsStepsPerCase) {
+    hegel::test(
+        [](hegel::TestCase& tc) {
+            StoppingCounter machine;
+            hegel::stateful::run(machine, tc);
+        },
+        hegel::Settings{.database = hegel::Database::disabled(),
+                        .stateful_step_count = 5});
+}
+
+TEST(Stateful, StepCountBelowOneThrows) {
+    EXPECT_THROW(hegel::test(
+                     [](hegel::TestCase& tc) {
+                         Stack machine;
+                         hegel::stateful::run(machine, tc);
+                     },
+                     hegel::Settings{.database = hegel::Database::disabled(),
+                                     .stateful_step_count = 0}),
+                 std::runtime_error);
+}
+
 TEST(Stateful, PoolAsState) {
     hegel::test([](hegel::TestCase& tc) {
         Allocator machine(tc);
