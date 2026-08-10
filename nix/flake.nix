@@ -25,19 +25,19 @@
       # Prebuilt libhegel (Hegel's native engine) release. Keep the version and
       # hashes in sync with cmake/libhegel.cmake and libhegel/hegel.h. Hashes
       # are the SHA-256 sidecars published next to each release asset.
-      libhegelVersion = "0.30.5";
+      libhegelVersion = "0.32.2";
       libhegelAssets = {
         "x86_64-linux" = {
           asset = "libhegel-linux-amd64.so";
-          sha256 = "68ad6922ff12f0f9192245a022e3b696dccb0de0c4b9b93adfb39b433294001c";
+          sha256 = "fee3a62e6d3f53861b0dcc01459718a84e0509a1586e073f610fe2b723a8e36d";
         };
         "aarch64-linux" = {
           asset = "libhegel-linux-arm64.so";
-          sha256 = "9eeb1dc095718a9b2483fab9fc1b693f1a4638f5a09e005f3cc76bd53c7bed3e";
+          sha256 = "7316b8676120d08b49f1421522ff106307877277e1f7e0d56b59cb8982492b8e";
         };
         "aarch64-darwin" = {
           asset = "libhegel-darwin-arm64.dylib";
-          sha256 = "7ae9fc3e6c04f339e09890be8260591028dfcdb766f7410781133a999ecc334e";
+          sha256 = "b411c77b7ca5e7aa93857f09cd9020fe23bab30bc51ff033b90b497e73f4bc9b";
         };
       };
 

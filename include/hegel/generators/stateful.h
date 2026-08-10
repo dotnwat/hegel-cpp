@@ -127,9 +127,7 @@ namespace hegel::stateful {
          *
          * @param tc The test case tied to the pool
          */
-        explicit Pool(const TestCase& tc) : tc_(tc) {
-            pool_id_ = hegel::internal::new_pool(tc);
-        }
+        explicit Pool(const TestCase& tc) : tc_(tc), pool_handle_(tc) {}
 
         /**
          * @brief Adds @p element to the pool. Overload for copying lvalues.
@@ -137,7 +135,7 @@ namespace hegel::stateful {
          * @param element The element to add to the pool
          */
         void add(const T& element) {
-            int64_t var_id = hegel::internal::pool_add(tc_, pool_id_);
+            int64_t var_id = pool_handle_.add(tc_);
             // GCOVR_EXCL_START
             if (pool_.find(var_id) != pool_.end()) {
                 throw std::runtime_error("unexpected variable id in map");
@@ -152,7 +150,7 @@ namespace hegel::stateful {
          * @param element The element to add to the pool
          */
         void add(T&& element) {
-            int64_t var_id = hegel::internal::pool_add(tc_, pool_id_);
+            int64_t var_id = pool_handle_.add(tc_);
             // GCOVR_EXCL_START
             if (pool_.find(var_id) != pool_.end()) {
                 throw std::runtime_error("unexpected variable id in map");
@@ -172,7 +170,7 @@ namespace hegel::stateful {
 
       private:
         const TestCase& tc_;
-        int64_t pool_id_;
+        hegel::internal::PoolHandle pool_handle_;
         std::map<int64_t, T> pool_;
 
         friend class VariablesGenerator<T>;
@@ -186,8 +184,7 @@ namespace hegel::stateful {
             : p_(p), consume_(consume) {}
 
         T do_draw(const TestCase& tc) const override {
-            int64_t variable =
-                hegel::internal::draw_variable(tc, p_.pool_id_, consume_);
+            int64_t variable = p_.pool_handle_.draw_variable(tc, consume_);
 
             auto it = p_.pool_.find(variable);
             // GCOVR_EXCL_START
@@ -532,13 +529,13 @@ namespace hegel::stateful {
         print_state(tc, machine, params);
         check_invariants(tc, "in the initial state", machine, invariants);
 
-        int64_t state_machine_id =
-            internal::new_state_machine(tc, rule_names, invariant_names);
+        internal::StateMachineHandle machine_handle(tc, rule_names,
+                                                    invariant_names);
         int64_t steps_run = 0;
 
         while (true) {
             internal::start_span(tc, internal::SpanLabel::StatefulRule);
-            int64_t next_rule_idx = internal::draw_rule(tc, state_machine_id);
+            int64_t next_rule_idx = machine_handle.next_rule(tc);
             if (next_rule_idx == internal::state_machine_done) {
                 break;
             }
@@ -566,6 +563,7 @@ namespace hegel::stateful {
                 internal::stop_span(tc);
             } catch (const internal::HegelReject&) {
                 tc.note("Rule stopped early due to violated assumption.");
+                machine_handle.rule_rejected(tc);
                 internal::stop_span(tc, true);
             } catch (...) {
                 internal::stop_span(tc);

@@ -91,18 +91,17 @@ namespace hegel::generators {
         std::vector<T> do_draw(const TestCase& tc) const override {
             namespace hi = hegel::internal;
             hi::start_span(tc, hi::SpanLabel::List);
-            int64_t collection = hi::new_collection(
+            hi::CollectionHandle collection(
                 tc, params_.min_size,
                 detail::collection_max_size(params_.max_size));
             std::vector<T> result;
-            while (hi::collection_more(tc, collection)) {
+            while (collection.more(tc)) {
                 T element = elements_.do_draw(tc);
                 if constexpr (detail::is_equality_comparable<T>::value) {
                     if (params_.unique &&
                         std::find(result.begin(), result.end(), element) !=
                             result.end()) {
-                        hi::collection_reject(tc, collection,
-                                              "duplicate element");
+                        collection.reject(tc, "duplicate element");
                         continue;
                     }
                 }
@@ -131,13 +130,13 @@ namespace hegel::generators {
         std::set<T> do_draw(const TestCase& tc) const override {
             namespace hi = hegel::internal;
             hi::start_span(tc, hi::SpanLabel::Set);
-            int64_t collection = hi::new_collection(
+            hi::CollectionHandle collection(
                 tc, params_.min_size,
                 detail::collection_max_size(params_.max_size));
             std::set<T> result;
-            while (hi::collection_more(tc, collection)) {
+            while (collection.more(tc)) {
                 if (!result.insert(elements_.do_draw(tc)).second) {
-                    hi::collection_reject(tc, collection, "duplicate element");
+                    collection.reject(tc, "duplicate element");
                 }
             }
             hi::stop_span(tc);
@@ -167,14 +166,14 @@ namespace hegel::generators {
         std::map<K, V> do_draw(const TestCase& tc) const override {
             namespace hi = hegel::internal;
             hi::start_span(tc, hi::SpanLabel::Map);
-            int64_t collection = hi::new_collection(
+            hi::CollectionHandle collection(
                 tc, params_.min_size,
                 detail::collection_max_size(params_.max_size));
             std::map<K, V> result;
-            while (hi::collection_more(tc, collection)) {
+            while (collection.more(tc)) {
                 K key = keys_.do_draw(tc);
                 if (result.find(key) != result.end()) {
-                    hi::collection_reject(tc, collection, "duplicate key");
+                    collection.reject(tc, "duplicate key");
                     continue;
                 }
                 result.emplace(std::move(key), values_.do_draw(tc));
