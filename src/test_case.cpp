@@ -60,10 +60,10 @@ namespace hegel {
         // Seed the loop's minimum length, then let the engine decide each
         // iteration: the count is drawn like any collection, so it shrinks.
         int64_t min_size = internal::draw_integer(*this, 0, int64_t{1} << 20);
-        int64_t collection = internal::new_collection(
+        internal::CollectionHandle collection(
             *this, static_cast<uint64_t>(min_size), internal::no_max_size);
         uint64_t iteration = 0;
-        while (internal::collection_more(*this, collection)) {
+        while (collection.more(*this)) {
             note("// Repetition #" + std::to_string(++iteration));
             try {
                 body();

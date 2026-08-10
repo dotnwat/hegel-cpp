@@ -9,6 +9,13 @@
 #include <string_view>
 #include <vector>
 
+/// @cond INTERNAL
+// opaque libhegel handle types.
+struct hegel_collection_t;
+struct hegel_pool_t;
+struct hegel_state_machine_t;
+/// @endcond
+
 /**
  * @brief Internal utilities exposed in public headers.
  */
@@ -61,26 +68,60 @@ namespace hegel::internal {
                       bool exclude_min, bool exclude_max,
                       double smallest_nonzero_magnitude);
 
-    // Engine-managed variable-length collections: the engine decides how
-    // many elements to produce; the caller loops on collection_more and
-    // draws one element per `true`. Pass no_max_size for no upper bound.
     inline constexpr uint64_t no_max_size = ~uint64_t{0};
-    int64_t new_collection(const TestCase& tc, uint64_t min_size,
-                           uint64_t max_size);
-    bool collection_more(const TestCase& tc, int64_t collection_id);
-    // Tell the engine the last element produced is unacceptable (e.g. a
-    // duplicate in a set) so it tries a different one.
-    void collection_reject(const TestCase& tc, int64_t collection_id,
-                           const char* why);
+    class CollectionHandle {
+      public:
+        CollectionHandle(const TestCase& tc, uint64_t min_size,
+                         uint64_t max_size);
+        ~CollectionHandle();
+        CollectionHandle(const CollectionHandle&) = delete;
+        CollectionHandle& operator=(const CollectionHandle&) = delete;
 
-    int64_t new_pool(const TestCase& tc);
-    int64_t pool_add(const TestCase& tc, int64_t pool_id);
-    int64_t draw_variable(const TestCase& tc, int64_t pool_id, bool consume);
+        bool more(const TestCase& tc);
+
+        void reject(const TestCase& tc, const char* why);
+
+      private:
+        hegel_collection_t* handle_ = nullptr;
+    };
+
+    class PoolHandle {
+      public:
+        explicit PoolHandle(const TestCase& tc);
+        ~PoolHandle();
+        PoolHandle(const PoolHandle&) = delete;
+        PoolHandle& operator=(const PoolHandle&) = delete;
+
+        // Returns a fresh variable id.
+        int64_t add(const TestCase& tc);
+        // Returns the variable id the engine picked, removing it from the
+        // pool when consume is true.
+        int64_t draw_variable(const TestCase& tc, bool consume);
+
+      private:
+        hegel_pool_t* handle_ = nullptr;
+    };
+
     inline constexpr int64_t state_machine_done = -1;
-    int64_t draw_rule(const TestCase& tc, int64_t state_machine_id);
-    int64_t new_state_machine(const TestCase& tc,
-                              const std::vector<std::string>& rule_names,
-                              const std::vector<std::string>& invariant_names);
+    class StateMachineHandle {
+      public:
+        StateMachineHandle(const TestCase& tc,
+                           const std::vector<std::string>& rule_names,
+                           const std::vector<std::string>& invariant_names);
+        ~StateMachineHandle();
+        StateMachineHandle(const StateMachineHandle&) = delete;
+        StateMachineHandle& operator=(const StateMachineHandle&) = delete;
+
+        // Returns the index of the next rule to run, or state_machine_done
+        // once the engine's step budget for this test case is used up.
+        int64_t next_rule(const TestCase& tc);
+        // Report that an assumption failed in the last rule, so it does not
+        // count against the step budget.
+        void rule_rejected(const TestCase& tc);
+
+      private:
+        hegel_state_machine_t* handle_ = nullptr;
+    };
 
     class NoteIndentScope {
       public:

@@ -622,75 +622,66 @@ namespace hegel::internal {
         return value;
     }
 
-    int64_t new_collection(const TestCase& tc, uint64_t min_size,
-                           uint64_t max_size) {
+    CollectionHandle::CollectionHandle(const TestCase& tc, uint64_t min_size,
+                                       uint64_t max_size) {
         impl::DrawScope scope(tc);
-        int64_t collection_id = 0;
         scope.raise_for_rc(hegel_new_collection(scope.ctx, scope.tc, min_size,
-                                                max_size, &collection_id),
+                                                max_size, &handle_),
                            "hegel_new_collection");
-        return collection_id;
     }
 
-    bool collection_more(const TestCase& tc, int64_t collection_id) {
+    CollectionHandle::~CollectionHandle() {
+        hegel_collection_free(impl::thread_context(), handle_);
+    }
+
+    bool CollectionHandle::more(const TestCase& tc) {
         impl::DrawScope scope(tc);
         bool more = false;
         scope.raise_for_rc(
-            hegel_collection_more(scope.ctx, scope.tc, collection_id, &more),
+            hegel_collection_more(scope.ctx, scope.tc, handle_, &more),
             "hegel_collection_more");
         return more;
     }
 
-    void collection_reject(const TestCase& tc, int64_t collection_id,
-                           const char* why) {
+    void CollectionHandle::reject(const TestCase& tc, const char* why) {
         impl::DrawScope scope(tc);
         scope.raise_for_rc(
-            hegel_collection_reject(scope.ctx, scope.tc, collection_id, why),
+            hegel_collection_reject(scope.ctx, scope.tc, handle_, why),
             "hegel_collection_reject");
     }
 
-    int64_t new_pool(const TestCase& tc) {
+    PoolHandle::PoolHandle(const TestCase& tc) {
         impl::DrawScope scope(tc);
-        int64_t pool_id = 0;
-        scope.raise_for_rc(hegel_new_pool(scope.ctx, scope.tc, &pool_id),
+        scope.raise_for_rc(hegel_new_pool(scope.ctx, scope.tc, &handle_),
                            "hegel_new_pool");
-        return pool_id;
     }
 
-    int64_t pool_add(const TestCase& tc, int64_t pool_id) {
+    PoolHandle::~PoolHandle() {
+        hegel_pool_free(impl::thread_context(), handle_);
+    }
+
+    int64_t PoolHandle::add(const TestCase& tc) {
         impl::DrawScope scope(tc);
         int64_t var_id = 0;
         scope.raise_for_rc(
-            hegel_pool_add(scope.ctx, scope.tc, pool_id, &var_id),
+            hegel_pool_add(scope.ctx, scope.tc, handle_, &var_id),
             "hegel_pool_add");
         return var_id;
     }
 
-    int64_t draw_variable(const TestCase& tc, int64_t pool_id, bool consume) {
+    int64_t PoolHandle::draw_variable(const TestCase& tc, bool consume) {
         impl::DrawScope scope(tc);
         int64_t var_id = 0;
         scope.raise_for_rc(
-            hegel_pool_generate(scope.ctx, scope.tc, pool_id, consume, &var_id),
+            hegel_pool_generate(scope.ctx, scope.tc, handle_, consume, &var_id),
             "hegel_pool_generate");
         return var_id;
     }
 
-    int64_t draw_rule(const TestCase& tc, int64_t state_machine_id) {
+    StateMachineHandle::StateMachineHandle(
+        const TestCase& tc, const std::vector<std::string>& rule_names,
+        const std::vector<std::string>& invariant_names) {
         impl::DrawScope scope(tc);
-        int64_t rule_idx;
-
-        scope.raise_for_rc(hegel_state_machine_next_rule(scope.ctx, scope.tc,
-                                                         state_machine_id,
-                                                         &rule_idx),
-                           "hegel_state_machine_next_rule");
-        return rule_idx;
-    }
-
-    int64_t new_state_machine(const TestCase& tc,
-                              const std::vector<std::string>& rule_names,
-                              const std::vector<std::string>& invariant_names) {
-        impl::DrawScope scope(tc);
-        int64_t machine_id;
 
         auto to_cstrings = [](const std::vector<std::string>& names) {
             std::vector<char*> cstrings;
@@ -708,10 +699,29 @@ namespace hegel::internal {
                                scope.ctx, scope.tc, rule_name_cstrings.data(),
                                rule_names.size(),
                                invariant_name_cstrings.data(),
-                               invariant_names.size(), &machine_id),
+                               invariant_names.size(), &handle_),
                            "hegel_new_state_machine");
+    }
 
-        return machine_id;
+    StateMachineHandle::~StateMachineHandle() {
+        hegel_state_machine_free(impl::thread_context(), handle_);
+    }
+
+    int64_t StateMachineHandle::next_rule(const TestCase& tc) {
+        impl::DrawScope scope(tc);
+        int64_t rule_idx;
+
+        scope.raise_for_rc(hegel_state_machine_next_rule(scope.ctx, scope.tc,
+                                                         handle_, &rule_idx),
+                           "hegel_state_machine_next_rule");
+        return rule_idx;
+    }
+
+    void StateMachineHandle::rule_rejected(const TestCase& tc) {
+        impl::DrawScope scope(tc);
+        scope.raise_for_rc(
+            hegel_state_machine_rule_rejected(scope.ctx, scope.tc, handle_),
+            "hegel_state_machine_rule_rejected");
     }
 
 } // namespace hegel::internal
