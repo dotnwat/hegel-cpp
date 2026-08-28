@@ -533,41 +533,48 @@ namespace hegel::stateful {
                                                     invariant_names);
         int64_t steps_run = 0;
 
-        while (true) {
-            internal::start_span(tc, internal::SpanLabel::StatefulRule);
-            int64_t next_rule_idx = machine_handle.next_rule(tc);
-            if (next_rule_idx == internal::state_machine_done) {
-                break;
-            }
-            // GCOVR_EXCL_START
-            if (next_rule_idx < 0 ||
-                static_cast<size_t>(next_rule_idx) >= rules.size()) {
-                throw std::runtime_error(
-                    "state_machine_next_rule returned out-of-range "
-                    "rule index. Please report this as a bug.");
-            }
-            // GCOVR_EXCL_STOP
-            steps_run++;
-            const Rule<M>& rule = rules[static_cast<size_t>(next_rule_idx)];
-            tc.note("Step " + std::to_string(steps_run) + ": " + rule.name());
-
-            try {
-                // nest the draws the step makes under its "Step N" header.
-                {
-                    internal::NoteIndentScope indent(tc);
-                    rule.step()(tc, machine);
+        // The engine drives execution in rounds: it decides at each join point
+        // whether another round runs, then a round's rule stream is pulled
+        // until it is exhausted. A sequential machine runs one rule per round.
+        while (machine_handle.next_group(tc) != internal::state_machine_done) {
+            while (true) {
+                int64_t next_rule_idx = machine_handle.next_rule(tc);
+                if (next_rule_idx == internal::state_machine_done) {
+                    break;
                 }
-                print_state(tc, machine, params);
-                check_invariants(tc, "after step " + std::to_string(steps_run),
-                                 machine, invariants);
-                internal::stop_span(tc);
-            } catch (const internal::HegelReject&) {
-                tc.note("Rule stopped early due to violated assumption.");
-                machine_handle.rule_rejected(tc);
-                internal::stop_span(tc, true);
-            } catch (...) {
-                internal::stop_span(tc);
-                throw;
+                // GCOVR_EXCL_START
+                if (next_rule_idx < 0 ||
+                    static_cast<size_t>(next_rule_idx) >= rules.size()) {
+                    throw std::runtime_error(
+                        "state_machine_next_rule returned out-of-range "
+                        "rule index. Please report this as a bug.");
+                }
+                // GCOVR_EXCL_STOP
+                internal::start_span(tc, internal::SpanLabel::StatefulRule);
+                steps_run++;
+                const Rule<M>& rule = rules[static_cast<size_t>(next_rule_idx)];
+                tc.note("Step " + std::to_string(steps_run) + ": " +
+                        rule.name());
+
+                try {
+                    // nest the draws the step makes under its "Step N" header.
+                    {
+                        internal::NoteIndentScope indent(tc);
+                        rule.step()(tc, machine);
+                    }
+                    print_state(tc, machine, params);
+                    check_invariants(tc,
+                                     "after step " + std::to_string(steps_run),
+                                     machine, invariants);
+                    internal::stop_span(tc);
+                } catch (const internal::HegelReject&) {
+                    tc.note("Rule stopped early due to violated assumption.");
+                    machine_handle.rule_rejected(tc);
+                    internal::stop_span(tc, true);
+                } catch (...) {
+                    internal::stop_span(tc);
+                    throw;
+                }
             }
         }
     }
