@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.11.5 - 2026-09-01
+
+This patch adds concurrent stateful testing: stateful tests where rules run concurrently from a number of worker threads. See the documentation for
+`run_concurrent` and `ConcurrentStateMachine` for details.
+
+It also adds `ConcurrentPool<T>`, which allows concurrent rules to safely add,
+reuse, and consume shared generated values. Stateful invariants now run in full on the initial and final states and are sampled between rules in sequential stateful tests and between rounds (a set of concurrent rule executions) in concurrent stateful tests.
+
 ## 0.11.4 - 2026-08-14
 
 This patch bumps our pinned `libhegel` ([hegel-rust](hegeldev/hegel-rust)) from [0.32.3](https://github.com/hegeldev/hegel-rust/releases/tag/v0.32.3) to [0.32.5](https://github.com/hegeldev/hegel-rust/releases/tag/v0.32.5).
