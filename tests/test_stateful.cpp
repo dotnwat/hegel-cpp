@@ -520,12 +520,12 @@ namespace {
 
     struct Boom : hs::ConcurrentStateMachine<Boom> {
         std::vector<hs::ConcurrentRule<Boom>> rules() {
-            return {hs::ConcurrentRule<Boom>("boom", [](hegel::TestCase& tc,
-                                                        Boom&) {
-                int64_t value = tc.draw(hegel::generators::integers<int64_t>());
-                throw std::runtime_error("concurrent boom " +
-                                         std::to_string(value));
-            })};
+            return {hs::ConcurrentRule<Boom>(
+                "boom", [](hegel::TestCase& tc, Boom&) {
+                    int value = tc.draw(hegel::generators::integers<int>());
+                    throw std::runtime_error("concurrent boom " +
+                                             std::to_string(value));
+                })};
         }
     };
 
