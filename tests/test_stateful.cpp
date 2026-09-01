@@ -4,6 +4,7 @@
 #include <ApprovalTests.hpp>
 
 #include <atomic>
+#include <memory>
 #include <mutex>
 #include <regex>
 #include <stdexcept>
@@ -172,6 +173,53 @@ namespace {
         }
     };
 
+    struct SampledInvariantMachine
+        : hs::StateMachine<SampledInvariantMachine, int> {
+        std::shared_ptr<std::atomic<int64_t>> rules_run;
+        std::shared_ptr<std::atomic<int64_t>> invariants_run;
+
+        SampledInvariantMachine(
+            std::shared_ptr<std::atomic<int64_t>> rules_run,
+            std::shared_ptr<std::atomic<int64_t>> invariants_run)
+            : StateMachine({.initial_state = 0}),
+              rules_run(std::move(rules_run)),
+              invariants_run(std::move(invariants_run)) {}
+
+        std::vector<hs::Rule<SampledInvariantMachine>> rules() {
+            return {hs::Rule<SampledInvariantMachine>(
+                "count_rule", [](hegel::TestCase&, SampledInvariantMachine& m) {
+                    m.rules_run->fetch_add(1, std::memory_order_relaxed);
+                })};
+        }
+
+        std::vector<hs::Invariant<SampledInvariantMachine>> invariants() {
+            return {hs::Invariant<SampledInvariantMachine>(
+                "count_invariant", [](const SampledInvariantMachine& m) {
+                    m.invariants_run->fetch_add(1, std::memory_order_relaxed);
+                })};
+        }
+    };
+
+    struct BreakOnceMachine : hs::StateMachine<BreakOnceMachine, bool> {
+        BreakOnceMachine() : StateMachine({.initial_state = false}) {}
+
+        std::vector<hs::Rule<BreakOnceMachine>> rules() {
+            return {hs::Rule<BreakOnceMachine>(
+                "break_it", [](hegel::TestCase&, BreakOnceMachine& m) {
+                    m.state = true;
+                })};
+        }
+
+        std::vector<hs::Invariant<BreakOnceMachine>> invariants() {
+            return {hs::Invariant<BreakOnceMachine>(
+                "not_broken", [](const BreakOnceMachine& m) {
+                    if (m.state) {
+                        throw std::runtime_error("machine is broken");
+                    }
+                })};
+        }
+    };
+
     // Overflows at 12, so a failing sequence is short enough to read whole.
     struct Counter : hegel::stateful::StateMachine<Counter, int> {
         Counter() : StateMachine({.initial_state = 0}) {}
@@ -270,6 +318,37 @@ TEST(Stateful, PoolAsState) {
         Allocator machine(tc);
         hegel::stateful::run(machine, tc);
     });
+}
+
+TEST(Stateful, InvariantsAreSampledRatherThanRunAfterEveryRule) {
+    auto rules_run = std::make_shared<std::atomic<int64_t>>(0);
+    auto invariants_run = std::make_shared<std::atomic<int64_t>>(0);
+    hegel::test(
+        [rules_run, invariants_run](hegel::TestCase& tc) {
+            SampledInvariantMachine machine(rules_run, invariants_run);
+            hs::run(machine, tc);
+        },
+        hegel::Settings{.test_cases = 20,
+                        .database = hegel::Database::disabled(),
+                        .stateful_step_count = 50});
+
+    int64_t rule_count = rules_run->load(std::memory_order_relaxed);
+    int64_t invariant_count = invariants_run->load(std::memory_order_relaxed);
+    EXPECT_GE(invariant_count, 2);
+    EXPECT_LT(invariant_count, rule_count / 4)
+        << "expected sampled invariant runs (" << invariant_count
+        << ") to stay far below rule runs (" << rule_count << ")";
+}
+
+TEST(Stateful, PersistentViolationsAreAlwaysCaughtDespiteSampling) {
+    EXPECT_THROW(hegel::test(
+                     [](hegel::TestCase& tc) {
+                         BreakOnceMachine machine;
+                         hs::run(machine, tc);
+                     },
+                     hegel::Settings{
+                         .database = hegel::Database::disabled()}),
+                 std::runtime_error);
 }
 
 TEST(Stateful, VerboseNestsDrawsAndHidesStopDecision) {
@@ -411,6 +490,39 @@ namespace {
         }
     };
 
+    struct ConcurrentSampledInvariantMachine
+        : hs::ConcurrentStateMachine<ConcurrentSampledInvariantMachine> {
+        std::shared_ptr<std::atomic<int64_t>> rules_run;
+        std::shared_ptr<std::atomic<int64_t>> invariants_run;
+
+        ConcurrentSampledInvariantMachine(
+            std::shared_ptr<std::atomic<int64_t>> rules_run,
+            std::shared_ptr<std::atomic<int64_t>> invariants_run)
+            : rules_run(std::move(rules_run)),
+              invariants_run(std::move(invariants_run)) {}
+
+        std::vector<hs::ConcurrentRule<ConcurrentSampledInvariantMachine>>
+        rules() {
+            return {hs::ConcurrentRule<ConcurrentSampledInvariantMachine>(
+                "count_rule",
+                [](hegel::TestCase&, ConcurrentSampledInvariantMachine& m) {
+                    m.rules_run->fetch_add(1, std::memory_order_relaxed);
+                })};
+        }
+
+        std::vector<hs::ConcurrentInvariant<
+            ConcurrentSampledInvariantMachine>>
+        invariants() {
+            return {hs::ConcurrentInvariant<
+                ConcurrentSampledInvariantMachine>(
+                "count_invariant",
+                [](const ConcurrentSampledInvariantMachine& m) {
+                    m.invariants_run->fetch_add(1,
+                                                std::memory_order_relaxed);
+                })};
+        }
+    };
+
     struct Boom : hs::ConcurrentStateMachine<Boom> {
         std::vector<hs::ConcurrentRule<Boom>> rules() {
             return {hs::ConcurrentRule<Boom>("boom", [](hegel::TestCase& tc,
@@ -447,6 +559,27 @@ TEST(ConcurrentStateful, GroupedMachinePasses) {
         hegel::Settings{.test_cases = 10,
                         .database = hegel::Database::disabled(),
                         .stateful_step_count = 10});
+}
+
+TEST(ConcurrentStateful, InvariantsAreSampledRatherThanRunAfterEveryRound) {
+    auto rules_run = std::make_shared<std::atomic<int64_t>>(0);
+    auto invariants_run = std::make_shared<std::atomic<int64_t>>(0);
+    hegel::test(
+        [rules_run, invariants_run](hegel::TestCase& tc) {
+            ConcurrentSampledInvariantMachine machine(rules_run,
+                                                      invariants_run);
+            hs::run_concurrent(machine, tc, 1, 1);
+        },
+        hegel::Settings{.test_cases = 20,
+                        .database = hegel::Database::disabled(),
+                        .stateful_step_count = 50});
+
+    int64_t rule_count = rules_run->load(std::memory_order_relaxed);
+    int64_t invariant_count = invariants_run->load(std::memory_order_relaxed);
+    EXPECT_GE(invariant_count, 2);
+    EXPECT_LT(invariant_count, rule_count / 4)
+        << "expected sampled invariant runs (" << invariant_count
+        << ") to stay far below rule runs (" << rule_count << ")";
 }
 
 TEST(ConcurrentPools, AddReuseAndConsume) {
