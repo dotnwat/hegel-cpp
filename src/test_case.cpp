@@ -1,4 +1,5 @@
 #include <hegel/internal.h>
+#include <hegel/settings.h>
 #include <hegel/test_case.h>
 
 #include <engine.h>
@@ -13,6 +14,8 @@
 #include <iomanip>
 #include <iostream>
 #include <memory>
+#include <mutex>
+#include <ratio>
 #include <sstream>
 #include <string>
 #include <string_view>
@@ -96,12 +99,13 @@ namespace hegel {
         std::string indent = data_->indent_prefix();
         std::string prefix;
         if (data_->worker_index.has_value()) {
+            std::size_t worker_index = data_->worker_index.value_or(0);
             double elapsed =
                 std::chrono::duration<double, std::milli>(
                     std::chrono::steady_clock::now() - data_->worker_started)
                     .count();
             std::ostringstream out;
-            out << "[worker " << *data_->worker_index << " +" << std::fixed
+            out << "[worker " << worker_index << " +" << std::fixed
                 << std::setprecision(3) << elapsed << "ms] ";
             prefix = out.str();
         }

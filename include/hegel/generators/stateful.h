@@ -584,7 +584,7 @@ namespace hegel::stateful {
             }
             const Invariant<T>& inv = invariants[index];
             try {
-                (inv.invariant())(state);
+                inv.invariant()(state);
             } catch (...) {
                 tc.note("Invariant " + inv.name() + " violated " + origin);
                 throw;
@@ -656,7 +656,7 @@ namespace hegel::stateful {
             std::vector<Event> events;
         };
 
-        auto classify = []() {
+        auto classify = [] {
             Event event;
             event.exception = internal::capture_current_exception();
             try {
@@ -807,13 +807,13 @@ namespace hegel::stateful {
                         saw_invalid = true;
                         break;
                         // GCOVR_EXCL_STOP
-                    case EventKind::Overrun:
-                        saw_overrun = true;
-                        break;
-                    case EventKind::Control: // e.g. invalid use of API
+                    case EventKind::Control:
                         if (!control.has_value()) {
                             control = worker;
                         }
+                        break;
+                    case EventKind::Overrun:
+                        saw_overrun = true;
                         break;
                     case EventKind::Panicked:
                         if (!panic.has_value()) {

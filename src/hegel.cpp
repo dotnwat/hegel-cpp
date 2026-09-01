@@ -32,6 +32,7 @@
 #include <stdexcept>
 #include <string>
 #include <typeinfo>
+#include <utility>
 #include <vector>
 
 #if defined(__APPLE__) || defined(__ELF__)
