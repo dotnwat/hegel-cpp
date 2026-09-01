@@ -68,6 +68,8 @@ namespace hegel::stateful {
     using hegel::generators::IGenerator;
 
     template <typename T> class VariablesGenerator;
+    template <typename T> class ConcurrentPool;
+    template <typename T> class ConcurrentVariablesGenerator;
 
     inline constexpr const char* anonymous_group = "<anonymous>";
 
@@ -324,6 +326,70 @@ namespace hegel::stateful {
      */
     template <typename T> Generator<T> values_reusable(Pool<T>& p) {
         return Generator<T>(new VariablesGenerator<T>(p, false));
+    }
+
+    template <typename T> class ConcurrentPool {
+      public:
+        explicit ConcurrentPool(const TestCase& tc) : pool_handle_(tc) {}
+
+        void add(const TestCase& tc, T value) {
+            std::lock_guard<std::mutex> lock(mutex_);
+            int64_t variable = pool_handle_.add(tc);
+            values_.emplace(variable, std::move(value));
+        }
+
+        bool empty() const {
+            std::lock_guard<std::mutex> lock(mutex_);
+            return values_.empty();
+        }
+
+        std::size_t size() const {
+            std::lock_guard<std::mutex> lock(mutex_);
+            return values_.size();
+        }
+
+        ConcurrentPool(const ConcurrentPool&) = delete;
+        ConcurrentPool& operator=(const ConcurrentPool&) = delete;
+
+      private:
+        internal::PoolHandle pool_handle_;
+        mutable std::mutex mutex_;
+        std::map<int64_t, T> values_;
+
+        friend class ConcurrentVariablesGenerator<T>;
+    };
+
+    template <typename T>
+    class ConcurrentVariablesGenerator : public IGenerator<T> {
+      public:
+        ConcurrentVariablesGenerator(ConcurrentPool<T>& pool, bool consume)
+            : pool_(pool), consume_(consume) {}
+
+        T do_draw(const TestCase& tc) const override {
+            std::lock_guard<std::mutex> lock(pool_.mutex_);
+            int64_t variable = pool_.pool_handle_.draw_variable(tc, consume_);
+            if (consume_) {
+                T result = std::move(pool_.values_.at(variable));
+                pool_.values_.erase(variable);
+                return result;
+            } else {
+                return pool_.values_.at(variable);
+            }
+        }
+
+      private:
+        ConcurrentPool<T>& pool_;
+        bool consume_;
+    };
+
+    template <typename T>
+    Generator<T> values_consumed(ConcurrentPool<T>& pool) {
+        return Generator<T>(new ConcurrentVariablesGenerator<T>(pool, true));
+    }
+
+    template <typename T>
+    Generator<T> values_reusable(ConcurrentPool<T>& pool) {
+        return Generator<T>(new ConcurrentVariablesGenerator<T>(pool, false));
     }
 
     /**
