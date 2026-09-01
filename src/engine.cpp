@@ -748,4 +748,15 @@ namespace hegel::internal {
                            "hegel_state_machine_rule_rejected");
     }
 
+    bool StateMachineHandle::should_check_invariant(const TestCase& tc,
+                                                    int64_t invariant_index) {
+        impl::DrawScope scope(tc);
+        bool should_check = false;
+        scope.raise_for_rc(
+            hegel_state_machine_should_check_invariant(
+                scope.ctx, scope.tc, handle_, invariant_index, &should_check),
+            "hegel_state_machine_should_check_invariant");
+        return should_check;
+    }
+
 } // namespace hegel::internal

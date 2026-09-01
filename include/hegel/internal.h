@@ -124,6 +124,8 @@ namespace hegel::internal {
         // Report that an assumption failed in the last rule, so it does not
         // count against the step budget.
         void rule_rejected(const TestCase& tc, int64_t worker_index);
+        bool should_check_invariant(const TestCase& tc,
+                                    int64_t invariant_index);
 
         int64_t concurrency() const { return concurrency_; }
 

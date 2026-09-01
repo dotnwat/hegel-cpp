@@ -645,9 +645,11 @@ namespace hegel {
 
             if (run_status == HEGEL_RUN_STATUS_FAILED_NONDETERMINISTIC) {
                 if (!nondeterministic_failure.has_value()) {
+                    // GCOVR_EXCL_START
                     throw std::runtime_error(
                         "internal error: nondeterministic failure was not "
                         "captured");
+                    // GCOVR_EXCL_STOP
                 }
 
                 if (!quiet) {
