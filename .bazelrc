@@ -1,0 +1,6 @@
+# The library builds at C++20, matching the CMake build (CMakeLists.txt).
+build --cxxopt=-std=c++20
+build --host_cxxopt=-std=c++20
+
+# Show the log of a failed test directly in the terminal.
+test --test_output=errors

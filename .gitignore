@@ -1,4 +1,6 @@
 build/
+bazel-*
+MODULE.bazel.lock
 .hypothesis
 .hegel
 __pycache__

@@ -3,8 +3,9 @@
 Resolves the target hegel-rust version (an explicit argument, else the latest
 release), writes it into `cmake/libhegel.cmake`, refreshes the vendored C ABI
 header (`libhegel/hegel.h`) from hegel-rust at the matching tag, repins the Nix
-flake (`nix/flake.nix`) version and per-platform SHA-256 hashes from the release
-sidecars, and drops a `RELEASE.md` so merging the PR cuts a hegel-cpp release.
+flake (`nix/flake.nix`) and the Bazel module extension (`libhegel/libhegel.bzl`)
+version and per-platform SHA-256 hashes from the release sidecars, and drops a
+`RELEASE.md` so merging the PR cuts a hegel-cpp release.
 
 The commit is intentionally *not* pushed: the workflow then realigns the C++
 wrapper layer to the new release, amends the result into this commit, and
@@ -33,6 +34,7 @@ BRANCH_PREFIX = "ci/bump-hegel-rust-"
 LIBHEGEL_CMAKE = ROOT / "cmake" / "libhegel.cmake"
 HEADER = ROOT / "libhegel" / "hegel.h"
 FLAKE = ROOT / "nix" / "flake.nix"
+BZL = ROOT / "libhegel" / "libhegel.bzl"
 RELEASE_MD = ROOT / "RELEASE.md"
 
 # The generated C ABI header committed in hegel-rust, tagged with each release.
@@ -44,6 +46,12 @@ FLAKE_VERSION_RE = re.compile(r'(libhegelVersion\s*=\s*")([^"]+)(")')
 # followed by its `sha256 = "..."` line. Recapture the hash to repin it.
 FLAKE_ASSET_RE = re.compile(
     r'(asset\s*=\s*"(?P<asset>[^"]+)";\s*sha256\s*=\s*")[0-9a-fA-F]+(")'
+)
+BZL_VERSION_RE = re.compile(r'(LIBHEGEL_VERSION\s*=\s*")([^"]+)(")')
+# Each entry in libhegel.bzl's _ASSETS dict: `"<platform>": ("<ext>", "<hex>")`.
+# Recapture the hash to repin it; the asset name is libhegel-<platform>.<ext>.
+BZL_ASSET_RE = re.compile(
+    r'("(?P<platform>[a-z0-9-]+)":\s*\("(?P<ext>[a-z]+)",\s*")[0-9a-fA-F]+("\))'
 )
 
 
@@ -127,6 +135,23 @@ def refresh_flake(version: str) -> None:
     FLAKE.write_text(text, encoding="utf-8")
 
 
+def refresh_bazel(version: str) -> None:
+    # Repin the Bazel module extension to match cmake/libhegel.cmake: bump the
+    # version and refresh each platform asset's SHA-256 from its sidecar.
+    text = BZL.read_text(encoding="utf-8")
+    text, n = BZL_VERSION_RE.subn(rf"\g<1>{version}\g<3>", text, count=1)
+    assert n == 1, "expected exactly one LIBHEGEL_VERSION line in libhegel.bzl"
+
+    def repin(m: "re.Match[str]") -> str:
+        asset = f"libhegel-{m.group('platform')}.{m.group('ext')}"
+        digest = fetch_asset_sha256(version, asset)
+        return f"{m.group(1)}{digest}{m.group(4)}"
+
+    text, n = BZL_ASSET_RE.subn(repin, text)
+    assert n >= 1, "expected at least one libhegel asset entry in libhegel.bzl"
+    BZL.write_text(text, encoding="utf-8")
+
+
 def bump(requested: str) -> None:
     current = get_pinned_version()
     target = requested or resolve_latest()
@@ -139,6 +164,7 @@ def bump(requested: str) -> None:
     set_pinned_version(target)
     refresh_header(target)
     refresh_flake(target)
+    refresh_bazel(target)
 
     current_url = f"https://github.com/{RUST_REPO}/releases/tag/v{current}"
     new_url = f"https://github.com/{RUST_REPO}/releases/tag/v{target}"
@@ -158,7 +184,7 @@ def bump(requested: str) -> None:
     # workflow pushes it after folding in the wrapper alignment.
     branch = BRANCH_PREFIX + target
     git("checkout", "-B", branch)
-    git("add", str(LIBHEGEL_CMAKE), str(HEADER), str(FLAKE), str(RELEASE_MD))
+    git("add", str(LIBHEGEL_CMAKE), str(HEADER), str(FLAKE), str(BZL), str(RELEASE_MD))
     git("commit", "-m", f"Bump pinned libhegel to {target}")
 
     set_output("bumped", "true")

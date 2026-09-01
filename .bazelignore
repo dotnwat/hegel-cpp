@@ -1,0 +1,3 @@
+# CMake build trees. FetchContent checkouts under build/ (googletest,
+# reflect-cpp) contain their own BUILD files, which must not become packages.
+build

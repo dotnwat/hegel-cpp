@@ -1,0 +1,178 @@
+load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library")
+load("@rules_shell//shell:sh_test.bzl", "sh_test")
+load(":tests.bzl", "hegel_cc_test")
+
+package(default_testonly = True)
+
+# Shared test utilities. Adds tests/ to the include path (for
+# "common/utils.h" and friends) and links gtest for the FAIL() macro.
+# Equivalent to the CMake hegel_tests_common target.
+cc_library(
+    name = "common",
+    hdrs = glob(["common/*.h"]),
+    includes = ["."],
+    deps = [
+        "//:hegel",
+        "@googletest//:gtest",
+    ],
+)
+
+# Approved snapshots for the approval (snapshot) suites. The tests locate
+# them as tests/approvals/ relative to the runfiles root, which matches the
+# workspace-relative path the compiler records for each test source.
+filegroup(
+    name = "approval_files",
+    srcs = glob(["approvals/*.approved.txt"]),
+)
+
+[
+    hegel_cc_test(
+        name = "test_shrink_quality_" + name,
+        src = "shrink_quality/test_" + name + ".cpp",
+        use_utils = True,
+    )
+    for name in [
+        "integers",
+        "floats",
+        "strings",
+        "collections",
+        "flatmap",
+        "mixed_types",
+    ]
+]
+
+[
+    hegel_cc_test(
+        name = "test_find_quality_" + name,
+        src = "find_quality/test_" + name + ".cpp",
+        use_utils = True,
+    )
+    for name in [
+        "integers",
+        "floats",
+        "strings",
+        "collections",
+        "one_of",
+    ]
+]
+
+# Example / integration property tests.
+hegel_cc_test(
+    name = "property_tests",
+    src = "property_tests.cpp",
+)
+
+# Run configuration: settings, phases, backend, database, health checks,
+# reproduce-failure blobs, and enum/environment helpers.
+hegel_cc_test(
+    name = "test_settings",
+    src = "test_settings.cpp",
+)
+
+# Generators, split by family.
+hegel_cc_test(
+    name = "test_generators_numeric",
+    src = "test_generators_numeric.cpp",
+)
+
+hegel_cc_test(
+    name = "test_generators_strings",
+    src = "test_generators_strings.cpp",
+)
+
+hegel_cc_test(
+    name = "test_generators_collections",
+    src = "test_generators_collections.cpp",
+)
+
+hegel_cc_test(
+    name = "test_generators_combinators",
+    src = "test_generators_combinators.cpp",
+)
+
+hegel_cc_test(
+    name = "test_generators_random",
+    src = "test_generators_random.cpp",
+)
+
+hegel_cc_test(
+    name = "test_stateful",
+    src = "test_stateful.cpp",
+    approvals = True,
+    use_utils = True,
+)
+
+# Guiding generation: reject(), target(), repeat().
+hegel_cc_test(
+    name = "test_guiding",
+    src = "test_guiding.cpp",
+)
+
+# Value printer for draw output.
+hegel_cc_test(
+    name = "test_repr",
+    src = "test_repr.cpp",
+)
+
+# GoogleTest assertion macros inside a property body.
+hegel_cc_test(
+    name = "test_gtest_macros",
+    src = "test_gtest_macros.cpp",
+)
+
+# Test-case cloning: clone(), spawn()/join(), and clone output approval.
+hegel_cc_test(
+    name = "test_clone",
+    src = "test_clone.cpp",
+    approvals = True,
+    use_utils = True,
+)
+
+# default_generator, via reflection.
+hegel_cc_test(
+    name = "test_derived",
+    src = "test_derived.cpp",
+)
+
+# Standalone binary with argv-selected failure scenarios; test_printing forks
+# it to observe failure reports from a fresh process.
+cc_binary(
+    name = "subject",
+    srcs = ["subject_main.cpp"],
+    deps = ["//:hegel"],
+)
+
+# Printing / failure reporting: subject-subprocess output tests plus
+# in-process per-verbosity diagnostics. The subject path is relative to the
+# runfiles root, the working directory of a Bazel test.
+hegel_cc_test(
+    name = "test_printing",
+    src = "test_printing.cpp",
+    approvals = True,
+    data = [":subject"],
+    local_defines = ['HEGEL_SUBJECT_BIN=\\"tests/subject\\"'] + select({
+        "//:throw_site_disabled": ["HEGEL_TESTS_NO_THROW_SITE"],
+        "//conditions:default": [],
+    }),
+    use_utils = True,
+)
+
+# A property inside a GoogleTest test, end to end. The binary fails by
+# design; the test passes when the output shows the counterexample.
+# Equivalent to the CTest PASS_REGULAR_EXPRESSION "actual:" check.
+cc_binary(
+    name = "test_gtest_bin",
+    srcs = ["test_gtest.cpp"],
+    deps = [
+        "//:hegel",
+        "@googletest//:gtest",
+    ],
+)
+
+sh_test(
+    name = "test_gtest",
+    size = "small",
+    srcs = ["test_gtest_expect_failure.sh"],
+    args = ["$(rootpath :test_gtest_bin)"],
+    data = [":test_gtest_bin"],
+)

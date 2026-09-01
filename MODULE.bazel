@@ -1,0 +1,54 @@
+# Bazel build for hegel-cpp. Mirrors the CMake build: the same dependency
+# versions (GoogleTest excepted, see below), the same configuration
+# (reflection on, JSON-only reflect-cpp), and the same test set. Keep
+# dependency pins in sync with CMakeLists.txt, tests/CMakeLists.txt, and
+# nix/flake.nix.
+
+module(
+    name = "hegel-cpp",
+    version = "0.11.6",
+)
+
+bazel_dep(name = "bazel_skylib", version = "1.9.2")
+bazel_dep(name = "platforms", version = "1.0.0")
+bazel_dep(name = "rules_cc", version = "0.2.22")
+
+# GoogleTest comes from the registry and is ahead of the CMake pin (v1.14.0):
+# the registry modules at that version predate Bazel 9 and do not load their
+# rules.
+bazel_dep(name = "googletest", version = "1.18.0.bcr.1", dev_dependency = True)
+bazel_dep(name = "rules_shell", version = "0.8.0", dev_dependency = True)
+
+# libhegel (Hegel's native engine): a prebuilt shared library downloaded from
+# the hegel-rust GitHub release and verified against its published SHA-256.
+# The version and hash pins live in libhegel/libhegel.bzl.
+libhegel = use_extension("//libhegel:libhegel.bzl", "libhegel")
+use_repo(
+    libhegel,
+    "libhegel-darwin-arm64",
+    "libhegel-linux-amd64",
+    "libhegel-linux-arm64",
+)
+
+http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
+
+# reflect-cpp with a local build file instead of the Bazel Central Registry
+# module: the registry has no loadable module at the pinned version (0.22.0
+# predates Bazel 9), and its target enables capnproto and YAML and defines
+# REFLECT_CPP_C_ARRAYS_OR_INHERITANCE, none of which the CMake build does.
+http_archive(
+    name = "reflectcpp",
+    build_file = "//third_party:reflectcpp.BUILD",
+    sha256 = "5756d74e7df640b4633a3ea5a3c0d7c4e096bdd3f67828f8b02f58b156ba39ec",
+    strip_prefix = "reflect-cpp-0.22.0",
+    urls = ["https://github.com/getml/reflect-cpp/archive/refs/tags/v0.22.0.tar.gz"],
+)
+
+http_archive(
+    name = "approvaltests",
+    build_file = "//third_party:approvaltests.BUILD",
+    dev_dependency = True,
+    sha256 = "44896af00018fc051f0332d7a78e4b8caf4274d2e51e6ba786e6271575fb82c8",
+    strip_prefix = "ApprovalTests.cpp-v.10.13.0",
+    urls = ["https://github.com/approvals/ApprovalTests.cpp/archive/refs/tags/v.10.13.0.tar.gz"],
+)
