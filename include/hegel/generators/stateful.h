@@ -142,49 +142,116 @@ namespace hegel::stateful {
      * the rules for the machine. Override @ref invariants to add invariant
      * checks.
      *
-     * The example below defines three groups. The @c alpha and @c beta rules
-     * can run concurrently because both use the @c letters group. The @c one
-     * rule
-     * uses the @c numbers group and does not overlap with them. The @c
-     * anonymous
-     * rule uses @ref anonymous_group and does not overlap with either named
-     * group.
+     * This example tests a key-value store that has a lost-update bug. The
+     * @c increment operation reads a value and then writes the incremented
+     * value in a separate operation. Thus, two workers can overwrite an
+     * update. The invariant compares the stored total with the number of
+     * completed increments.
+     *
+     * The @c operations group contains the register, increment, and read
+     * rules. These rules can run concurrently. The @c snapshot group does not
+     * overlap with the @c operations group.
      *
      * @code{.cpp}
-        struct MyConcurrent
-            : hegel::stateful::ConcurrentStateMachine<GroupedMachine> {
-            std::mutex mutex;
-            std::vector<std::string> log;
+        class ConcurrentKVStore {
+          public:
+            std::optional<int64_t> get(int key) const {
+                std::lock_guard<std::mutex> lock(mutex_);
+                auto value = values_.find(key);
+                if (value == values_.end()) {
+                    return std::nullopt;
+                }
+                return value->second;
+            }
 
-            std::vector<hegel::stateful::ConcurrentRule<GroupedMachine>>
+            void put(int key, int64_t value) {
+                std::lock_guard<std::mutex> lock(mutex_);
+                values_[key] = value;
+            }
+
+            bool put_if_absent(int key, int64_t value) {
+                std::lock_guard<std::mutex> lock(mutex_);
+                return values_.emplace(key, value).second;
+            }
+
+            void increment(int key) {
+                int64_t value = get(key).value_or(0);
+                std::this_thread::yield();
+                put(key, value + 1);
+            }
+
+            std::map<int, int64_t> snapshot() const {
+                std::lock_guard<std::mutex> lock(mutex_);
+                return values_;
+            }
+
+          private:
+            mutable std::mutex mutex_;
+            std::map<int, int64_t> values_;
+        };
+
+        struct ConcurrentKV
+            : hegel::stateful::ConcurrentStateMachine<ConcurrentKV> {
+            ConcurrentKVStore store;
+            hegel::stateful::ConcurrentPool<int> keys;
+            std::atomic<int64_t> increments{0};
+
+            explicit ConcurrentKV(hegel::TestCase& tc) : keys(tc) {}
+
+            std::vector<hegel::stateful::ConcurrentRule<ConcurrentKV>>
             rules() {
                 return {
-                    {"alpha", "letters",
-                     [](hegel::TestCase&, GroupedMachine& m) {
-                         std::lock_guard<std::mutex> lock(m.mutex);
-                         m.log.push_back("alpha");
+                    {"register", "operations",
+                     [](hegel::TestCase& tc, ConcurrentKV& m) {
+                         int key = tc.draw(hegel::generators::integers<int>(
+                             {.min_value = 0, .max_value = 3}));
+                         if (m.store.put_if_absent(key, 0)) {
+                             m.keys.add(tc, key);
+                         }
                      }},
-                    {"beta", "letters",
-                     [](hegel::TestCase&, GroupedMachine& m) {
-                         std::lock_guard<std::mutex> lock(m.mutex);
-                         m.log.push_back("beta");
+                    {"increment", "operations",
+                     [](hegel::TestCase& tc, ConcurrentKV& m) {
+                         int key = tc.draw(
+                             hegel::stateful::values_reusable(m.keys));
+                         m.store.increment(key);
+                         m.increments.fetch_add(1);
                      }},
-                    {"one", "numbers",
-                     [](hegel::TestCase&, GroupedMachine& m) {
-                         std::lock_guard<std::mutex> lock(m.mutex);
-                         m.log.push_back("one");
+                    {"read", "operations",
+                     [](hegel::TestCase& tc, ConcurrentKV& m) {
+                         int key = tc.draw(
+                             hegel::stateful::values_reusable(m.keys));
+                         int64_t value = m.store.get(key).value_or(0);
+                         tc.note("read " + std::to_string(key) + " -> " +
+                                 std::to_string(value));
                      }},
-                    {"anonymous", [](hegel::TestCase&, GroupedMachine& m) {
-                         std::lock_guard<std::mutex> lock(m.mutex);
-                         m.log.push_back("anonymous");
+                    {"snapshot", "snapshot",
+                     [](hegel::TestCase& tc, ConcurrentKV& m) {
+                         tc.note("snapshot holds " +
+                                 std::to_string(m.store.snapshot().size()) +
+                                 " keys");
                      }},
                 };
             }
+
+            std::vector<hegel::stateful::Invariant<ConcurrentKV>> invariants()
+                const {
+                return {{"no_lost_updates", [](const ConcurrentKV& m) {
+                             int64_t stored = 0;
+                             for (const auto& entry : m.store.snapshot()) {
+                                 stored += entry.second;
+                             }
+                             int64_t performed = m.increments.load();
+                             if (stored != performed) {
+                                 throw std::runtime_error(
+                                     "the store lost an increment");
+                             }
+                         }}};
+            }
         };
 
-        HEGEL_TEST(grouped_machine)(hegel::TestCase& tc) {
-            GroupedMachine machine;
-            hegel::stateful::run_concurrent(machine, tc, 1, 3);
+        HEGEL_TEST(concurrent_kv)(hegel::TestCase& tc) {
+            ConcurrentKV machine(tc);
+            hegel::stateful::run_concurrent(machine, tc, 1, 4);
         }
      * @endcode
      *
