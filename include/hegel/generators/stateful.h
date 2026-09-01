@@ -1,11 +1,17 @@
 #pragma once
 
+#include <condition_variable>
 #include <cstddef>
 #include <cstdint>
+#include <exception>
 #include <functional>
 #include <map>
+#include <memory>
+#include <mutex>
+#include <optional>
 #include <stdexcept>
 #include <string>
+#include <thread>
 #include <type_traits>
 #include <utility>
 #include <vector>
@@ -20,8 +26,9 @@
  * @ref StateMachine and define its @c rules(). Each @ref Rule is a name and a
  * step function that performs one application of the rule, drawing any
  * arguments it needs from the test case and mutating the machine. Invariants
- * are predicates on the machine evaluated before any step is run and after
- * every successful step. An invariant must throw when violated.
+ * are predicates on the machine evaluated in full before any step and after
+ * the final step, and sampled at intermediate join points. An invariant must
+ * throw when violated.
  *
  * To run a state machine, pass an instance to @ref run inside a
  * @ref hegel::test. Examples in this documentation assume the alias
@@ -62,6 +69,139 @@ namespace hegel::stateful {
     using hegel::generators::IGenerator;
 
     template <typename T> class VariablesGenerator;
+    template <typename T> class Invariant;
+
+    /// The group name for rules that do not specify a group.
+    inline constexpr const char* anonymous_group = "<anonymous>";
+
+    /**
+     * @brief An action that a worker can apply to a concurrent state machine.
+     *
+     * Rules in the same group can run concurrently. Rules in different groups
+     * cannot. A rule that does not specify a group uses @ref anonymous_group.
+     *
+     * @tparam M The state-machine type that the rule acts on
+     */
+    template <typename M> class ConcurrentRule {
+      public:
+        /// The type of the function that applies the rule.
+        using Function = std::function<void(TestCase&, M&)>;
+
+        /**
+         * @brief Creates a rule in @ref anonymous_group.
+         *
+         * @param name The name of the rule
+         * @param function The function that applies the rule
+         */
+        ConcurrentRule(std::string name, Function function)
+            : ConcurrentRule(std::move(name), anonymous_group,
+                             std::move(function)) {}
+
+        /**
+         * @brief Creates a rule in the specified group.
+         *
+         * @param name The name of the rule
+         * @param group The concurrency group of the rule
+         * @param function The function that applies the rule
+         */
+        ConcurrentRule(std::string name, std::string group, Function function)
+            : name_(std::move(name)), group_(std::move(group)),
+              function_(std::move(function)) {}
+
+        /**
+         * @brief Returns the name of the rule.
+         *
+         * @return The name of the rule
+         */
+        const std::string& name() const { return name_; }
+
+        /**
+         * @brief Returns the concurrency group of the rule.
+         *
+         * @return The concurrency group of the rule
+         */
+        const std::string& group() const { return group_; }
+
+        /**
+         * @brief Returns the function that applies the rule.
+         *
+         * @return The function that applies the rule
+         */
+        const Function& function() const { return function_; }
+
+      private:
+        std::string name_;
+        std::string group_;
+        Function function_;
+    };
+
+    /**
+     * @brief Base class for a concurrent state machine.
+     *
+     * Derive a machine from this class. Define a @c rules() member that returns
+     * the rules for the machine. Override @ref invariants to add invariant
+     * checks.
+     *
+     * The example below defines three groups. The @c alpha and @c beta rules
+     * can run concurrently because both use the @c letters group. The @c one
+     * rule
+     * uses the @c numbers group and does not overlap with them. The @c
+     * anonymous
+     * rule uses @ref anonymous_group and does not overlap with either named
+     * group.
+     *
+     * @code{.cpp}
+        struct MyConcurrent
+            : hegel::stateful::ConcurrentStateMachine<GroupedMachine> {
+            std::mutex mutex;
+            std::vector<std::string> log;
+
+            std::vector<hegel::stateful::ConcurrentRule<GroupedMachine>>
+            rules() {
+                return {
+                    {"alpha", "letters",
+                     [](hegel::TestCase&, GroupedMachine& m) {
+                         std::lock_guard<std::mutex> lock(m.mutex);
+                         m.log.push_back("alpha");
+                     }},
+                    {"beta", "letters",
+                     [](hegel::TestCase&, GroupedMachine& m) {
+                         std::lock_guard<std::mutex> lock(m.mutex);
+                         m.log.push_back("beta");
+                     }},
+                    {"one", "numbers",
+                     [](hegel::TestCase&, GroupedMachine& m) {
+                         std::lock_guard<std::mutex> lock(m.mutex);
+                         m.log.push_back("one");
+                     }},
+                    {"anonymous", [](hegel::TestCase&, GroupedMachine& m) {
+                         std::lock_guard<std::mutex> lock(m.mutex);
+                         m.log.push_back("anonymous");
+                     }},
+                };
+            }
+        };
+
+        HEGEL_TEST(grouped_machine)(hegel::TestCase& tc) {
+            GroupedMachine machine;
+            hegel::stateful::run_concurrent(machine, tc, 1, 3);
+        }
+     * @endcode
+     *
+     * @tparam Derived The deriving state-machine type
+     */
+    template <typename Derived> class ConcurrentStateMachine {
+      public:
+        /**
+         * @brief Returns the invariants of the machine.
+         *
+         * Override this member to add invariants. There are no invariants by
+         * default.
+         *
+         * @return The invariants of the machine
+         */
+        std::vector<Invariant<Derived>> invariants() const { return {}; }
+    };
 
     /**
      * @brief A pool of previously generated values.  A pool lets data flow from
@@ -274,6 +414,132 @@ namespace hegel::stateful {
         return Generator<T>(new VariablesGenerator<T>(p, false));
     }
 
+    /// @cond INTERNAL
+    template <typename T> class ConcurrentVariablesGenerator;
+    /// @endcond
+
+    /**
+     * @brief A pool of values that concurrent workers can share.
+     *
+     * Store the pool in a concurrent state machine. Use @ref add to add a
+     * value from a worker, @ref values_reusable to draw a copy without
+     * removal, and @ref values_consumed to draw and remove a value.
+     *
+     * libhegel selects a value and updates the pool as an atomic operation.
+     * A draw rejects the test case if the pool is empty.
+     *
+     * A @ref ConcurrentPool is not copyable.
+     *
+     * @tparam T The type of the values in the pool
+     */
+    template <typename T> class ConcurrentPool {
+      public:
+        /**
+         * @brief Creates an empty pool.
+         *
+         * @param tc The test case
+         */
+        explicit ConcurrentPool(const TestCase& tc) : pool_handle_(tc) {}
+
+        /**
+         * @brief Adds a value to the pool.
+         *
+         * Call with the test case of the current worker.
+         *
+         * @param tc The test case of the current worker
+         * @param value The value to add
+         */
+        void add(const TestCase& tc, T value) {
+            std::lock_guard<std::mutex> lock(mutex_);
+            int64_t variable = pool_handle_.add(tc);
+            values_.emplace(variable, std::move(value));
+        }
+
+        /**
+         * @brief Returns true if the pool contains no values.
+         *
+         * @return True if the pool contains no values
+         */
+        bool empty() const {
+            std::lock_guard<std::mutex> lock(mutex_);
+            return values_.empty();
+        }
+
+        /**
+         * @brief Returns the number of values in the pool.
+         *
+         * @return The number of values in the pool
+         */
+        std::size_t size() const {
+            std::lock_guard<std::mutex> lock(mutex_);
+            return values_.size();
+        }
+
+        ConcurrentPool(const ConcurrentPool&) = delete;
+        ConcurrentPool& operator=(const ConcurrentPool&) = delete;
+
+      private:
+        internal::PoolHandle pool_handle_;
+        mutable std::mutex mutex_;
+        std::map<int64_t, T> values_;
+
+        friend class ConcurrentVariablesGenerator<T>;
+    };
+
+    /// @cond INTERNAL
+    template <typename T>
+    class ConcurrentVariablesGenerator : public IGenerator<T> {
+      public:
+        ConcurrentVariablesGenerator(ConcurrentPool<T>& pool, bool consume)
+            : pool_(pool), consume_(consume) {}
+
+        T do_draw(const TestCase& tc) const override {
+            std::lock_guard<std::mutex> lock(pool_.mutex_);
+            int64_t variable = pool_.pool_handle_.draw_variable(tc, consume_);
+            if (consume_) {
+                T result = std::move(pool_.values_.at(variable));
+                pool_.values_.erase(variable);
+                return result;
+            } else {
+                return pool_.values_.at(variable);
+            }
+        }
+
+      private:
+        ConcurrentPool<T>& pool_;
+        bool consume_;
+    };
+    /// @endcond
+
+    /**
+     * @brief Returns a value from a concurrent pool and removes it.
+     *
+     * The draw rejects the test case if the pool is empty.
+     *
+     * @tparam T The type of the values in the pool
+     * @param pool The pool to draw from
+     * @return A generator that consumes values from the pool
+     */
+    template <typename T>
+    Generator<T> values_consumed(ConcurrentPool<T>& pool) {
+        return Generator<T>(new ConcurrentVariablesGenerator<T>(pool, true));
+    }
+
+    /**
+     * @brief Returns a copy of a value from a concurrent pool.
+     *
+     * The draw does not remove the value. It rejects the test case if the pool
+     * is empty.
+     *
+     * @tparam T The type of the values in the pool
+     * @param pool The pool to draw from
+     * @return A generator that reuses values from the pool
+     */
+    template <typename T>
+    Generator<T> values_reusable(ConcurrentPool<T>& pool) {
+        return Generator<T>(new ConcurrentVariablesGenerator<T>(pool, false));
+    }
+
     /**
      * @brief A rule is one possible action in a stateful test.
      *
@@ -320,9 +586,9 @@ namespace hegel::stateful {
 
     /**
      * @brief An invariant is a predicate that must hold at any point in the
-     * stateful test. They are evaluated on the initial state and after every
-     * valid step. The invariant function should throw when the invariant is
-     * violated.
+     * stateful test. They are evaluated in full on the initial and final state
+     * and sampled at intermediate join points. The invariant function should
+     * throw when the invariant is violated.
      *
      * @tparam T The state-machine type the invariant checks
      */
@@ -381,9 +647,9 @@ namespace hegel::stateful {
      * @endcode
      *
      * returning the actions the test may apply. Optionally override
-     * @ref invariants to add predicates checked before the first step and
-     * after every valid step. Rules mutate @ref state in place. Pass an
-     * instance to @ref run.
+     * @ref invariants to add predicates checked in full before the first step
+     * and after the final step, and sampled between steps. Rules mutate
+     * @ref state in place. Pass an instance to @ref run.
      *
      * @code{.cpp}
         struct Counter : hegel::stateful::StateMachine<Counter, int> {
@@ -424,8 +690,9 @@ namespace hegel::stateful {
         State state;
 
         /**
-         * @brief Invariants checked before the first step and after every valid
-         * step. Override to add them. Defaults to none.
+         * @brief Invariants checked in full before the first step and after the
+         * final step, and sampled between steps. Override to add them. Defaults
+         * to none.
          *
          * @return const std::vector<Invariant<Derived>>&
          */
@@ -466,14 +733,21 @@ namespace hegel::stateful {
         }
     }
 
-    // check if invariants hold on a given state
     template <typename T>
-    void check_invariants(TestCase& tc, const std::string& origin,
-                          const T& state,
-                          const std::vector<Invariant<T>>& invariants) {
-        for (const auto& inv : invariants) {
+    void check_invariants(
+        TestCase& tc, const std::string& origin, const T& state,
+        const std::vector<Invariant<T>>& invariants,
+        std::optional<std::reference_wrapper<internal::StateMachineHandle>>
+            machine_handle = std::nullopt) {
+        for (std::size_t index = 0; index < invariants.size(); ++index) {
+            if (machine_handle.has_value() &&
+                !machine_handle->get().should_check_invariant(
+                    tc, static_cast<int64_t>(index))) {
+                continue;
+            }
+            const Invariant<T>& inv = invariants[index];
             try {
-                (inv.invariant())(state);
+                inv.invariant()(state);
             } catch (...) {
                 tc.note("Invariant " + inv.name() + " violated " + origin);
                 throw;
@@ -483,14 +757,300 @@ namespace hegel::stateful {
     /// @endcond
 
     /**
+     * @brief Executes a concurrent stateful test with rules from @p machine.
+     *
+     * The runner selects a concurrency level from @p min_concurrency through
+     * @p max_concurrency. Execution proceeds in rounds. For each round,
+     * libhegel picks a random concurrency group. Every worker thread then runs
+     * a short (possibly empty) random sequence of rules from only that group
+     * concurrently with the other workers. The runner waits for all workers to
+     * finish before it starts the next round.
+     *
+     * All invariants run before the first round and after the final round.
+     * Between rounds, the runner samples each invariant independently.
+     *
+     * Raises @c std::invalid_argument if the machine declares no rules or if
+     * the concurrency bounds are invalid.
+     *
+     * On a failing replay, the output shows the concurrency level, each round,
+     * the active group, and the rules that each worker applies, but the
+     * falsifying test case is not shrunk since the failure may be dependent on
+     * thread scheduling.
+     *
+     * @tparam M The state-machine type, deriving from
+     * @ref ConcurrentStateMachine
+     * @param machine The state machine that the workers share
+     * @param tc The test case object
+     * @param min_concurrency The minimum number of workers
+     * @param max_concurrency The maximum number of workers
+     */
+    template <typename M>
+    void run_concurrent(M& machine, TestCase& tc, int64_t min_concurrency,
+                        int64_t max_concurrency) {
+        static_assert(std::is_base_of<ConcurrentStateMachine<M>, M>::value,
+                      "run_concurrent() requires a machine deriving from "
+                      "ConcurrentStateMachine<M>.");
+        if (min_concurrency < 1 || min_concurrency > max_concurrency) {
+            throw std::invalid_argument(
+                "concurrency bounds must satisfy 1 <= min <= max");
+        }
+
+        std::vector<ConcurrentRule<M>> rules = machine.rules();
+        std::vector<Invariant<M>> invariants = machine.invariants();
+        if (rules.empty()) {
+            throw std::invalid_argument(
+                "Cannot run a concurrent state machine with no rules.");
+        }
+
+        std::vector<std::string> rule_names;
+        std::vector<std::string> invariant_names;
+        std::vector<std::string> group_names;     // maps group ID to name
+        std::map<std::string, int64_t> group_ids; // maps group name to ID
+        std::vector<int64_t>
+            rule_groups; // ID of group that rule_names[i] belongs to is the ID
+                         // at rule_groups[i].
+        rule_names.reserve(rules.size());
+        rule_groups.reserve(rules.size());
+        for (const ConcurrentRule<M>& rule : rules) {
+            rule_names.push_back(rule.name());
+            auto [group, inserted] = group_ids.emplace(
+                rule.group(), static_cast<int64_t>(group_ids.size()));
+            if (inserted) {
+                group_names.push_back(rule.group());
+            }
+            rule_groups.push_back(group->second);
+        }
+        invariant_names.reserve(invariants.size());
+        for (const Invariant<M>& invariant : invariants) {
+            invariant_names.push_back(invariant.name());
+        }
+
+        internal::StateMachineHandle machine_handle(
+            tc, rule_names, rule_groups, invariant_names, min_concurrency,
+            max_concurrency);
+        tc.note("Concurrency level: " +
+                std::to_string(machine_handle.concurrency()));
+        tc.note("Initial invariant check.");
+        check_invariants(tc, "in the initial state", machine, invariants);
+
+        enum class EventKind { RoundDone, Invalid, Overrun, Control, Panicked };
+        struct Event {
+            EventKind kind = EventKind::RoundDone;
+            std::optional<internal::CapturedException> exception;
+        };
+        struct RoundState {
+            std::mutex mutex;
+            std::condition_variable start;
+            std::condition_variable done;
+            uint64_t round_number = 0;
+            bool stop = false;
+            std::size_t num_workers_completed = 0;
+            std::vector<Event> events;
+        };
+
+        auto classify = [] {
+            Event event;
+            event.exception = internal::capture_current_exception();
+            try {
+                std::rethrow_exception(event.exception->exception);
+            } catch (const internal::HegelStopTest&) {
+                event.kind = EventKind::Overrun;
+            } catch (const internal::HegelReject&) {
+                // not the same as rule rejection - entire test case is rejected
+                // requires some worker race on cloned test cases with same
+                // parent
+                event.kind = EventKind::Invalid; // GCOVR_EXCL_LINE
+            } catch (const std::invalid_argument&) {
+                event.kind = EventKind::Control;
+            } catch (...) {
+                event.kind = EventKind::Panicked;
+            }
+            return event;
+        };
+
+        auto run_round = [&](std::size_t worker, TestCase& worker_tc) {
+            try {
+                while (true) {
+                    int64_t rule_index = machine_handle.next_rule(
+                        worker_tc, static_cast<int64_t>(worker));
+                    if (rule_index == internal::state_machine_done) {
+                        return Event{};
+                    }
+                    if (rule_index < 0 ||
+                        static_cast<std::size_t>(rule_index) >= rules.size()) {
+                        // GCOVR_EXCL_START
+                        throw std::runtime_error(
+                            "state_machine_next_rule returned out-of-range "
+                            "rule index. Please report this as a bug.");
+                        // GCOVR_EXCL_STOP
+                    }
+
+                    const ConcurrentRule<M>& rule =
+                        rules[static_cast<std::size_t>(rule_index)];
+                    worker_tc.note("Rule: " + rule.name());
+                    try {
+                        internal::NoteIndentScope indent(worker_tc);
+                        rule.function()(worker_tc, machine);
+                    } catch (const internal::HegelReject&) {
+                        machine_handle.rule_rejected(
+                            worker_tc, static_cast<int64_t>(worker));
+                        worker_tc.note(
+                            "Rule stopped early due to violated assumption.");
+                    }
+                }
+            } catch (...) {
+                return classify();
+            }
+        };
+
+        std::size_t worker_count =
+            static_cast<std::size_t>(machine_handle.concurrency());
+        RoundState state;
+        state.events.resize(worker_count);
+        std::vector<std::thread> workers;
+        workers.reserve(worker_count);
+        for (std::size_t worker = 0; worker < worker_count; ++worker) {
+            TestCase worker_tc = tc.clone();
+            internal::set_concurrent_worker(worker_tc, worker);
+            workers.emplace_back(
+                [&, worker, worker_tc = std::move(worker_tc)]() mutable {
+                    uint64_t observed_round_number = 0;
+                    while (true) {
+                        {
+                            std::unique_lock<std::mutex> lock(state.mutex);
+                            state.start.wait(lock, [&] {
+                                return state.stop ||
+                                       state.round_number !=
+                                           observed_round_number; // main thread
+                                                                  // started a
+                                                                  // new round
+                            });
+                            if (state.stop) {
+                                return;
+                            }
+                            observed_round_number = state.round_number;
+                        }
+
+                        {
+                            Event event = run_round(worker, worker_tc);
+                            std::lock_guard<std::mutex> lock(state.mutex);
+                            state.events[worker] = std::move(event);
+                            ++state.num_workers_completed;
+                        }
+                        state.done.notify_one();
+                    }
+                });
+        }
+
+        auto stop_workers = [&] {
+            {
+                std::lock_guard<std::mutex> lock(state.mutex);
+                state.stop = true;
+            }
+            state.start.notify_all();
+            for (std::thread& worker : workers) {
+                worker.join();
+            }
+        };
+
+        try {
+            while (true) {
+                int64_t group = machine_handle.next_group(tc);
+                if (group == internal::state_machine_done) {
+                    break;
+                }
+                if (group < 0 ||
+                    static_cast<std::size_t>(group) >= group_names.size()) {
+                    // GCOVR_EXCL_START
+                    throw std::runtime_error(
+                        "state_machine_next_group returned an unknown group "
+                        "index. Please report this as a bug.");
+                    // GCOVR_EXCL_STOP
+                }
+                {
+                    std::lock_guard<std::mutex> lock(state.mutex);
+                    state.num_workers_completed = 0;
+                    ++state.round_number;
+                    tc.note("---------------- Round " +
+                            std::to_string(state.round_number) + ": group \"" +
+                            group_names[static_cast<std::size_t>(group)] +
+                            "\" ----------------");
+                }
+                state.start.notify_all();
+                {
+                    std::unique_lock<std::mutex> lock(state.mutex);
+                    state.done.wait(lock, [&] {
+                        return state.num_workers_completed == worker_count;
+                    });
+                }
+
+                std::optional<std::size_t> control;
+                bool saw_overrun = false;
+                bool saw_invalid = false;
+                std::optional<std::size_t> panic;
+                // need to collect every event because the precedence is
+                // control > overrun > invalid > panic > round complete
+                for (std::size_t worker = 0; worker < worker_count; ++worker) {
+                    switch (state.events[worker].kind) {
+                    case EventKind::RoundDone:
+                        break;
+                        // GCOVR_EXCL_START
+                    case EventKind::Invalid:
+                        saw_invalid = true;
+                        break;
+                        // GCOVR_EXCL_STOP
+                    case EventKind::Control:
+                        if (!control.has_value()) {
+                            control = worker;
+                        }
+                        break;
+                    case EventKind::Overrun:
+                        saw_overrun = true;
+                        break;
+                    case EventKind::Panicked:
+                        if (!panic.has_value()) {
+                            panic = worker;
+                        }
+                        break;
+                    }
+                }
+                if (control.has_value()) {
+                    state.events[*control].exception->rethrow();
+                }
+                if (saw_overrun) {
+                    throw internal::HegelStopTest();
+                }
+                if (saw_invalid) {
+                    throw internal::HegelReject(); // GCOVR_EXCL_LINE
+                }
+                if (panic.has_value()) {
+                    state.events[*panic].exception->rethrow();
+                }
+                check_invariants(
+                    tc, "after round " + std::to_string(state.round_number),
+                    machine, invariants, std::ref(machine_handle));
+            }
+
+            tc.note("Final invariant check.");
+            check_invariants(tc, "in the final state", machine, invariants);
+        } catch (...) {
+            stop_workers();
+            throw;
+        }
+        stop_workers();
+    }
+
+    /**
      * @brief Executes a stateful test by repeatedly applying randomly chosen
-     * rules from @p machine to it and checking @p machine's invariants before
-     * the first step and after every valid step. Rules mutate @p machine in
-     * place. Raises @p std::invalid_argument if the machine declares no rules.
+     * rules from @p machine to it. Invariants run in full before the first
+     * step and after the final step. Between steps, each invariant is sampled
+     * independently. Rules mutate
+     * @p machine in place. Raises @p std::invalid_argument if the machine
+     * declares no rules.
      *
      * On a failing replay, each applied rule prints as @c "Step N: <name>". A
-     * violated invariant prints @c "Invariant <name> violated after step M" or
-     * @c "Invariant <name> violated in the initial state".
+     * violated invariant identifies whether it was observed after a step or
+     * in the initial or final state.
      *
      * @code{.txt}
         Step 1: add
@@ -526,50 +1086,59 @@ namespace hegel::stateful {
         for (const Invariant<M>& invariant : invariants)
             invariant_names.push_back(invariant.name());
 
+        std::vector<int64_t> rule_groups(rule_names.size(), 0);
+        internal::StateMachineHandle machine_handle(tc, rule_names, rule_groups,
+                                                    invariant_names, 1, 1);
+        tc.note("Initial invariant check.");
         print_state(tc, machine, params);
         check_invariants(tc, "in the initial state", machine, invariants);
-
-        internal::StateMachineHandle machine_handle(tc, rule_names,
-                                                    invariant_names);
         int64_t steps_run = 0;
 
-        while (true) {
-            internal::start_span(tc, internal::SpanLabel::StatefulRule);
-            int64_t next_rule_idx = machine_handle.next_rule(tc);
-            if (next_rule_idx == internal::state_machine_done) {
-                break;
-            }
-            // GCOVR_EXCL_START
-            if (next_rule_idx < 0 ||
-                static_cast<size_t>(next_rule_idx) >= rules.size()) {
-                throw std::runtime_error(
-                    "state_machine_next_rule returned out-of-range "
-                    "rule index. Please report this as a bug.");
-            }
-            // GCOVR_EXCL_STOP
-            steps_run++;
-            const Rule<M>& rule = rules[static_cast<size_t>(next_rule_idx)];
-            tc.note("Step " + std::to_string(steps_run) + ": " + rule.name());
-
-            try {
-                // nest the draws the step makes under its "Step N" header.
-                {
-                    internal::NoteIndentScope indent(tc);
-                    rule.step()(tc, machine);
+        // Sequential stateful testing is modeled as a concurrent stateful test
+        // with one group and one worker.
+        while (machine_handle.next_group(tc) != internal::state_machine_done) {
+            while (true) {
+                int64_t next_rule_idx = machine_handle.next_rule(tc, 0);
+                if (next_rule_idx == internal::state_machine_done) {
+                    break;
                 }
-                print_state(tc, machine, params);
-                check_invariants(tc, "after step " + std::to_string(steps_run),
-                                 machine, invariants);
-                internal::stop_span(tc);
-            } catch (const internal::HegelReject&) {
-                tc.note("Rule stopped early due to violated assumption.");
-                machine_handle.rule_rejected(tc);
-                internal::stop_span(tc, true);
-            } catch (...) {
-                internal::stop_span(tc);
-                throw;
+                // GCOVR_EXCL_START
+                if (next_rule_idx < 0 ||
+                    static_cast<size_t>(next_rule_idx) >= rules.size()) {
+                    throw std::runtime_error(
+                        "state_machine_next_rule returned out-of-range "
+                        "rule index. Please report this as a bug.");
+                }
+                // GCOVR_EXCL_STOP
+                internal::start_span(tc, internal::SpanLabel::StatefulRule);
+                steps_run++;
+                const Rule<M>& rule = rules[static_cast<size_t>(next_rule_idx)];
+                tc.note("Step " + std::to_string(steps_run) + ": " +
+                        rule.name());
+
+                try {
+                    // nest the draws the step makes under its "Step N" header.
+                    {
+                        internal::NoteIndentScope indent(tc);
+                        rule.step()(tc, machine);
+                    }
+                    print_state(tc, machine, params);
+                    internal::stop_span(tc);
+                } catch (const internal::HegelReject&) {
+                    tc.note("Rule stopped early due to violated assumption.");
+                    machine_handle.rule_rejected(tc, 0);
+                    internal::stop_span(tc, true);
+                } catch (...) {
+                    internal::stop_span(tc);
+                    throw;
+                }
             }
+            check_invariants(tc, "after step " + std::to_string(steps_run),
+                             machine, invariants, std::ref(machine_handle));
         }
+
+        tc.note("Final invariant check.");
+        check_invariants(tc, "in the final state", machine, invariants);
     }
     /// @}
 

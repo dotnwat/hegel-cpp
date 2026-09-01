@@ -70,6 +70,8 @@ namespace hegel::impl {
     /// returned handle is caller-owned; release it with hegel_test_case_free.
     hegel_test_case_t* test_case_clone(hegel_context_t* ctx,
                                        const hegel_test_case_t* tc);
+    bool test_case_is_nondeterministic(hegel_context_t* ctx,
+                                       const hegel_test_case_t* tc);
     void mark_complete(hegel_context_t* ctx, hegel_test_case_t* tc,
                        hegel_status_t status, const char* origin);
 

@@ -3,11 +3,23 @@
 
 #include <ApprovalTests.hpp>
 
+#include <atomic>
+#include <memory>
+#include <mutex>
+#include <regex>
+#include <stdexcept>
+#include <string>
+#include <thread>
+#include <utility>
+#include <vector>
+
 #include "common/approvals.h"
 
 namespace gs = hegel::generators;
+namespace hs = hegel::stateful;
 
 using ApprovalTests::Approvals;
+using hegel::tests::common::scrub_concurrent_report;
 using hegel::tests::common::scrub_report;
 
 TEST(Pools, PoolsRoundTrip) {
@@ -161,6 +173,52 @@ namespace {
         }
     };
 
+    struct SampledInvariantMachine
+        : hs::StateMachine<SampledInvariantMachine, int> {
+        std::shared_ptr<std::atomic<int64_t>> rules_run;
+        std::shared_ptr<std::atomic<int64_t>> invariants_run;
+
+        SampledInvariantMachine(
+            std::shared_ptr<std::atomic<int64_t>> rules_run,
+            std::shared_ptr<std::atomic<int64_t>> invariants_run)
+            : StateMachine({.initial_state = 0}),
+              rules_run(std::move(rules_run)),
+              invariants_run(std::move(invariants_run)) {}
+
+        std::vector<hs::Rule<SampledInvariantMachine>> rules() {
+            return {hs::Rule<SampledInvariantMachine>(
+                "count_rule", [](hegel::TestCase&, SampledInvariantMachine& m) {
+                    m.rules_run->fetch_add(1, std::memory_order_relaxed);
+                })};
+        }
+
+        std::vector<hs::Invariant<SampledInvariantMachine>> invariants() {
+            return {hs::Invariant<SampledInvariantMachine>(
+                "count_invariant", [](const SampledInvariantMachine& m) {
+                    m.invariants_run->fetch_add(1, std::memory_order_relaxed);
+                })};
+        }
+    };
+
+    struct BreakOnceMachine : hs::StateMachine<BreakOnceMachine, bool> {
+        BreakOnceMachine() : StateMachine({.initial_state = false}) {}
+
+        std::vector<hs::Rule<BreakOnceMachine>> rules() {
+            return {hs::Rule<BreakOnceMachine>(
+                "break_it",
+                [](hegel::TestCase&, BreakOnceMachine& m) { m.state = true; })};
+        }
+
+        std::vector<hs::Invariant<BreakOnceMachine>> invariants() {
+            return {hs::Invariant<BreakOnceMachine>(
+                "not_broken", [](const BreakOnceMachine& m) {
+                    if (m.state) {
+                        throw std::runtime_error("machine is broken");
+                    }
+                })};
+        }
+    };
+
     // Overflows at 12, so a failing sequence is short enough to read whole.
     struct Counter : hegel::stateful::StateMachine<Counter, int> {
         Counter() : StateMachine({.initial_state = 0}) {}
@@ -261,6 +319,36 @@ TEST(Stateful, PoolAsState) {
     });
 }
 
+TEST(Stateful, InvariantsAreSampledRatherThanRunAfterEveryRule) {
+    auto rules_run = std::make_shared<std::atomic<int64_t>>(0);
+    auto invariants_run = std::make_shared<std::atomic<int64_t>>(0);
+    hegel::test(
+        [rules_run, invariants_run](hegel::TestCase& tc) {
+            SampledInvariantMachine machine(rules_run, invariants_run);
+            hs::run(machine, tc);
+        },
+        hegel::Settings{.test_cases = 20,
+                        .database = hegel::Database::disabled(),
+                        .stateful_step_count = 50});
+
+    int64_t rule_count = rules_run->load(std::memory_order_relaxed);
+    int64_t invariant_count = invariants_run->load(std::memory_order_relaxed);
+    EXPECT_GE(invariant_count, 2);
+    EXPECT_LT(invariant_count, rule_count / 4)
+        << "expected sampled invariant runs (" << invariant_count
+        << ") to stay far below rule runs (" << rule_count << ")";
+}
+
+TEST(Stateful, PersistentViolationsAreAlwaysCaughtDespiteSampling) {
+    EXPECT_THROW(hegel::test(
+                     [](hegel::TestCase& tc) {
+                         BreakOnceMachine machine;
+                         hs::run(machine, tc);
+                     },
+                     hegel::Settings{.database = hegel::Database::disabled()}),
+                 std::runtime_error);
+}
+
 TEST(Stateful, VerboseNestsDrawsAndHidesStopDecision) {
     testing::internal::CaptureStderr();
     hegel::test(
@@ -289,4 +377,369 @@ TEST(Stateful, StatePrintingIsOnByDefault) {
 TEST(Stateful, StatePrintingCanBeDisabled) {
     Approvals::verify(capture_counter_failure({.print_state = false}),
                       scrub_report());
+}
+
+namespace {
+    struct ConcurrentCounter : hs::ConcurrentStateMachine<ConcurrentCounter> {
+        std::atomic<int64_t> value{0};
+
+        std::vector<hs::ConcurrentRule<ConcurrentCounter>> rules() {
+            return {
+                hs::ConcurrentRule<ConcurrentCounter>(
+                    "increment",
+                    [](hegel::TestCase&, ConcurrentCounter& m) {
+                        m.value.fetch_add(1, std::memory_order_seq_cst);
+                    }),
+                hs::ConcurrentRule<ConcurrentCounter>(
+                    "decrement",
+                    [](hegel::TestCase& tc, ConcurrentCounter& m) {
+                        tc.assume(m.value.load(std::memory_order_seq_cst) > 0);
+                        m.value.fetch_sub(1, std::memory_order_seq_cst);
+                    }),
+            };
+        }
+
+        std::vector<hs::Invariant<ConcurrentCounter>> invariants() {
+            return {hs::Invariant<ConcurrentCounter>(
+                "non_negative", [](const ConcurrentCounter& m) {
+                    EXPECT_GE(m.value.load(std::memory_order_seq_cst), 0);
+                })};
+        }
+    };
+
+    struct Grouped : hs::ConcurrentStateMachine<Grouped> {
+        mutable std::mutex mutex;
+        std::vector<std::string> log;
+
+        std::vector<hs::ConcurrentRule<Grouped>> rules() {
+            return {
+                hs::ConcurrentRule<Grouped>(
+                    "alpha", "letters",
+                    [](hegel::TestCase&, Grouped& m) {
+                        std::lock_guard<std::mutex> lock(m.mutex);
+                        m.log.push_back("alpha");
+                    }),
+                hs::ConcurrentRule<Grouped>(
+                    "beta", "letters",
+                    [](hegel::TestCase& tc, Grouped& m) {
+                        int8_t n = tc.draw(gs::integers<int8_t>());
+                        tc.assume(n != 0);
+                        std::lock_guard<std::mutex> lock(m.mutex);
+                        m.log.push_back("beta");
+                    }),
+                hs::ConcurrentRule<Grouped>(
+                    "one", "numbers",
+                    [](hegel::TestCase&, Grouped& m) {
+                        std::lock_guard<std::mutex> lock(m.mutex);
+                        m.log.push_back("one");
+                    }),
+                hs::ConcurrentRule<Grouped>(
+                    "anonymous",
+                    [](hegel::TestCase&, Grouped& m) {
+                        std::lock_guard<std::mutex> lock(m.mutex);
+                        m.log.push_back("anonymous");
+                    }),
+            };
+        }
+
+        std::vector<hs::Invariant<Grouped>> invariants() {
+            return {
+                hs::Invariant<Grouped>("log_is_bounded", [](const Grouped& m) {
+                    std::lock_guard<std::mutex> lock(m.mutex);
+                    EXPECT_LE(m.log.size(), 100000);
+                })};
+        }
+    };
+
+    struct PoolMachine : hs::ConcurrentStateMachine<PoolMachine> {
+        hs::ConcurrentPool<int64_t> pool;
+        std::atomic<int64_t> next{0};
+
+        explicit PoolMachine(hegel::TestCase& tc) : pool(tc) {}
+
+        std::vector<hs::ConcurrentRule<PoolMachine>> rules() {
+            return {
+                hs::ConcurrentRule<PoolMachine>(
+                    "add",
+                    [](hegel::TestCase& tc, PoolMachine& m) {
+                        m.pool.add(
+                            tc, m.next.fetch_add(1, std::memory_order_seq_cst));
+                    }),
+                hs::ConcurrentRule<PoolMachine>(
+                    "reuse",
+                    [](hegel::TestCase& tc, PoolMachine& m) {
+                        int64_t value = tc.draw(hs::values_reusable(m.pool));
+                        EXPECT_GE(value, 0);
+                    }),
+                hs::ConcurrentRule<PoolMachine>(
+                    "consume",
+                    [](hegel::TestCase& tc, PoolMachine& m) {
+                        int64_t value = tc.draw(hs::values_consumed(m.pool));
+                        EXPECT_GE(value, 0);
+                    }),
+            };
+        }
+
+        std::vector<hs::Invariant<PoolMachine>> invariants() {
+            return {hs::Invariant<PoolMachine>(
+                "pool_is_bounded", [](const PoolMachine& m) {
+                    EXPECT_LE(m.pool.size(), 100000);
+                })};
+        }
+    };
+
+    struct ConcurrentSampledInvariantMachine
+        : hs::ConcurrentStateMachine<ConcurrentSampledInvariantMachine> {
+        std::shared_ptr<std::atomic<int64_t>> rules_run;
+        std::shared_ptr<std::atomic<int64_t>> invariants_run;
+
+        ConcurrentSampledInvariantMachine(
+            std::shared_ptr<std::atomic<int64_t>> rules_run,
+            std::shared_ptr<std::atomic<int64_t>> invariants_run)
+            : rules_run(std::move(rules_run)),
+              invariants_run(std::move(invariants_run)) {}
+
+        std::vector<hs::ConcurrentRule<ConcurrentSampledInvariantMachine>>
+        rules() {
+            return {hs::ConcurrentRule<ConcurrentSampledInvariantMachine>(
+                "count_rule",
+                [](hegel::TestCase&, ConcurrentSampledInvariantMachine& m) {
+                    m.rules_run->fetch_add(1, std::memory_order_relaxed);
+                })};
+        }
+
+        std::vector<hs::Invariant<ConcurrentSampledInvariantMachine>>
+        invariants() {
+            return {hs::Invariant<ConcurrentSampledInvariantMachine>(
+                "count_invariant",
+                [](const ConcurrentSampledInvariantMachine& m) {
+                    m.invariants_run->fetch_add(1, std::memory_order_relaxed);
+                })};
+        }
+    };
+
+    struct Boom : hs::ConcurrentStateMachine<Boom> {
+        std::vector<hs::ConcurrentRule<Boom>> rules() {
+            return {hs::ConcurrentRule<Boom>(
+                "boom", [](hegel::TestCase& tc, Boom&) {
+                    int value = tc.draw(hegel::generators::integers<int>());
+                    throw std::runtime_error("concurrent boom " +
+                                             std::to_string(value));
+                })};
+        }
+    };
+
+    struct RejectsEveryRule : hs::ConcurrentStateMachine<RejectsEveryRule> {
+        std::vector<hs::ConcurrentRule<RejectsEveryRule>> rules() {
+            return {hs::ConcurrentRule<RejectsEveryRule>(
+                "reject", [](hegel::TestCase& tc, RejectsEveryRule&) {
+                    tc.assume(false);
+                })};
+        }
+    };
+
+    struct ThrowsInvalidArgument
+        : hs::ConcurrentStateMachine<ThrowsInvalidArgument> {
+        std::vector<hs::ConcurrentRule<ThrowsInvalidArgument>> rules() {
+            return {hs::ConcurrentRule<ThrowsInvalidArgument>(
+                "throw", [](hegel::TestCase&, ThrowsInvalidArgument&) {
+                    throw std::invalid_argument("invalid rule");
+                })};
+        }
+    };
+
+    struct ThrowsNonStandard : hs::ConcurrentStateMachine<ThrowsNonStandard> {
+        std::vector<hs::ConcurrentRule<ThrowsNonStandard>> rules() {
+            return {hs::ConcurrentRule<ThrowsNonStandard>(
+                "throw",
+                [](hegel::TestCase&, ThrowsNonStandard&) { throw 42; })};
+        }
+    };
+
+    struct NoRules : hs::ConcurrentStateMachine<NoRules> {
+        std::vector<hs::ConcurrentRule<NoRules>> rules() { return {}; }
+    };
+} // namespace
+
+TEST(ConcurrentStateful, FixedSingleWorkerPasses) {
+    hegel::test(
+        [](hegel::TestCase& tc) {
+            ConcurrentCounter machine;
+            hs::run_concurrent(machine, tc, 1, 1);
+        },
+        hegel::Settings{.test_cases = 5,
+                        .database = hegel::Database::disabled(),
+                        .stateful_step_count = 5});
+}
+
+TEST(ConcurrentStateful, GroupedMachinePasses) {
+    hegel::test(
+        [](hegel::TestCase& tc) {
+            Grouped machine;
+            hs::run_concurrent(machine, tc, 1, 3);
+        },
+        hegel::Settings{.test_cases = 10,
+                        .database = hegel::Database::disabled(),
+                        .stateful_step_count = 10});
+}
+
+TEST(ConcurrentStateful, InvariantsAreSampledRatherThanRunAfterEveryRound) {
+    auto rules_run = std::make_shared<std::atomic<int64_t>>(0);
+    auto invariants_run = std::make_shared<std::atomic<int64_t>>(0);
+    hegel::test(
+        [rules_run, invariants_run](hegel::TestCase& tc) {
+            ConcurrentSampledInvariantMachine machine(rules_run,
+                                                      invariants_run);
+            hs::run_concurrent(machine, tc, 1, 1);
+        },
+        hegel::Settings{.test_cases = 20,
+                        .database = hegel::Database::disabled(),
+                        .stateful_step_count = 50});
+
+    int64_t rule_count = rules_run->load(std::memory_order_relaxed);
+    int64_t invariant_count = invariants_run->load(std::memory_order_relaxed);
+    EXPECT_GE(invariant_count, 2);
+    EXPECT_LT(invariant_count, rule_count / 4)
+        << "expected sampled invariant runs (" << invariant_count
+        << ") to stay far below rule runs (" << rule_count << ")";
+}
+
+TEST(ConcurrentPools, AddReuseAndConsume) {
+    hegel::test([](hegel::TestCase& tc) {
+        hs::ConcurrentPool<int64_t> pool(tc);
+        EXPECT_TRUE(pool.empty());
+        pool.add(tc, 10);
+        pool.add(tc, 20);
+        EXPECT_EQ(pool.size(), 2);
+        int64_t reused = tc.draw(hs::values_reusable(pool));
+        EXPECT_TRUE(reused == 10 || reused == 20);
+        EXPECT_EQ(pool.size(), 2);
+        int64_t first = tc.draw(hs::values_consumed(pool));
+        EXPECT_EQ(pool.size(), 1);
+        int64_t second = tc.draw(hs::values_consumed(pool));
+        EXPECT_EQ(first + second, 30);
+        EXPECT_TRUE(pool.empty());
+    });
+}
+
+TEST(ConcurrentPools, SharedAcrossWorkers) {
+    hegel::test(
+        [](hegel::TestCase& tc) {
+            PoolMachine machine(tc);
+            hs::run_concurrent(machine, tc, 1, 3);
+        },
+        hegel::Settings{.test_cases = 10,
+                        .database = hegel::Database::disabled(),
+                        .stateful_step_count = 10});
+}
+
+TEST(ConcurrentStateful, WorkerExceptionHasOriginAndBufferedOutput) {
+    testing::internal::CaptureStderr();
+    std::string message;
+    try {
+        hegel::test(
+            [](hegel::TestCase& tc) {
+                Boom machine;
+                hs::run_concurrent(machine, tc, 2, 2);
+            },
+            hegel::Settings{.print_blob = true,
+                            .database = hegel::Database::disabled()});
+    } catch (const std::runtime_error& error) {
+        message = error.what();
+    }
+    std::string output = testing::internal::GetCapturedStderr();
+
+    EXPECT_NE(message.find("concurrent boom"), std::string::npos) << message;
+    EXPECT_NE(output.find("Concurrent state machine detected"),
+              std::string::npos)
+        << output;
+    EXPECT_NE(output.find("---------------- Round 1: group \"<anonymous>\" "
+                          "----------------"),
+              std::string::npos)
+        << output;
+
+    std::smatch rule_match;
+    std::regex rule_pattern(
+        R"(\[worker ([0-9]+) \+[0-9]+\.[0-9]{3}ms\] Rule: boom)");
+    ASSERT_TRUE(std::regex_search(output, rule_match, rule_pattern)) << output;
+    std::string worker = rule_match[1].str();
+    std::regex draw_pattern("\\[worker " + worker +
+                            " \\+[0-9]+\\.[0-9]{3}ms\\]   auto "
+                            "draw_[0-9]+ =");
+    EXPECT_TRUE(std::regex_search(output, draw_pattern)) << output;
+    EXPECT_NE(output.find("Exception: std::runtime_error: concurrent boom"),
+              std::string::npos)
+        << output;
+    EXPECT_EQ(output.find("<unknown>"), std::string::npos) << output;
+    EXPECT_EQ(output.find("rerun with:"), std::string::npos) << output;
+}
+
+TEST(ConcurrentStateful, FixedSingleWorkerFailureRemainsDeterministic) {
+    testing::internal::CaptureStderr();
+    EXPECT_THROW(hegel::test(
+                     [](hegel::TestCase& tc) {
+                         Boom machine;
+                         hs::run_concurrent(machine, tc, 1, 1);
+                     },
+                     hegel::Settings{.print_blob = true,
+                                     .database = hegel::Database::disabled()}),
+                 std::runtime_error);
+    std::string output = testing::internal::GetCapturedStderr();
+    Approvals::verify(output, scrub_concurrent_report());
+}
+
+TEST(ConcurrentStateful, AllRejectedRulesAreDiscarded) {
+    hegel::test(
+        [](hegel::TestCase& tc) {
+            RejectsEveryRule machine;
+            hs::run_concurrent(machine, tc, 1, 1);
+        },
+        hegel::Settings{.test_cases = 1,
+                        .verbosity = hegel::Verbosity::Quiet,
+                        .database = hegel::Database::disabled()});
+}
+
+TEST(ConcurrentStateful, InvalidArgumentFromWorkerIsRethrown) {
+    EXPECT_THROW(hegel::test(
+                     [](hegel::TestCase& tc) {
+                         ThrowsInvalidArgument machine;
+                         hs::run_concurrent(machine, tc, 1, 1);
+                     },
+                     hegel::Settings{.verbosity = hegel::Verbosity::Quiet,
+                                     .database = hegel::Database::disabled()}),
+                 std::invalid_argument);
+}
+
+TEST(ConcurrentStateful, NonStandardExceptionFromWorkerIsRethrown) {
+    EXPECT_ANY_THROW(hegel::test(
+        [](hegel::TestCase& tc) {
+            ThrowsNonStandard machine;
+            hs::run_concurrent(machine, tc, 1, 1);
+        },
+        hegel::Settings{.verbosity = hegel::Verbosity::Quiet,
+                        .database = hegel::Database::disabled()}));
+}
+
+TEST(ConcurrentStateful, InvalidConcurrencyBoundsAreRejected) {
+    for (const auto& [minimum, maximum] :
+         std::vector<std::pair<int64_t, int64_t>>{{0, 1}, {2, 1}}) {
+        EXPECT_THROW(
+            hegel::test(
+                [=](hegel::TestCase& tc) {
+                    ConcurrentCounter machine;
+                    hs::run_concurrent(machine, tc, minimum, maximum);
+                },
+                hegel::Settings{.database = hegel::Database::disabled()}),
+            std::invalid_argument);
+    }
+}
+
+TEST(ConcurrentStateful, MachineWithoutRulesIsRejected) {
+    EXPECT_THROW(hegel::test(
+                     [](hegel::TestCase& tc) {
+                         NoRules machine;
+                         hs::run_concurrent(machine, tc, 1, 1);
+                     },
+                     hegel::Settings{.database = hegel::Database::disabled()}),
+                 std::invalid_argument);
 }

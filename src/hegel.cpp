@@ -16,6 +16,7 @@
 
 #include <hegel.h>
 
+#include <algorithm>
 #include <array>
 #include <charconv>
 #include <cstddef>
@@ -31,6 +32,7 @@
 #include <stdexcept>
 #include <string>
 #include <typeinfo>
+#include <utility>
 #include <vector>
 
 #if defined(__APPLE__) || defined(__ELF__)
@@ -78,6 +80,12 @@ extern "C" void __cxa_throw(void* exception, ThrowTypeInfo* type_info,
 namespace hegel {
 
     namespace {
+        /*
+        Needed because concurrent execution crosses threads. The main thread
+        cannot access the worker’s thread-local origin otherwise.
+        */
+        thread_local std::optional<std::string> concurrent_exception_origin;
+
         constexpr const char* flaky_diagnostic =
             "Flaky test detected: Your test produced different outcomes when "
             "run with the same generated data — it failed when it previously "
@@ -164,6 +172,38 @@ namespace hegel {
             std::exception_ptr exception;
         };
 
+        struct NondeterministicFailure {
+            BodyOutcome outcome;
+            std::vector<impl::test_case::WorkerOutputLine> lines;
+        };
+
+        std::vector<std::string> group_concurrent_output(
+            const std::vector<impl::test_case::WorkerOutputLine>& records) {
+            std::vector<std::string> lines;
+            std::vector<impl::test_case::WorkerOutputLine> round;
+            auto append_grouped_worker_lines = [&] {
+                std::stable_sort(round.begin(), round.end(),
+                                 [](const auto& left, const auto& right) {
+                                     return *left.worker < *right.worker;
+                                 });
+                for (const auto& line : round) {
+                    lines.push_back(line.text);
+                }
+                round.clear();
+            };
+            for (const auto& record : records) {
+                if (record.worker.has_value()) {
+                    round.push_back(record);
+                } else {
+                    append_grouped_worker_lines();
+                    lines.push_back(
+                        record.text); // text from main thread has null worker
+                }
+            }
+            append_grouped_worker_lines();
+            return lines;
+        }
+
         // Demangle a typeid name, owning the malloc'd result. The fallback
         // covers unparseable input and the demangler's allocation failure.
         std::string demangle(const char* name) {
@@ -238,8 +278,14 @@ namespace hegel {
                 return {HEGEL_STATUS_INVALID, "", "", ""};
             } catch (const std::exception& e) {
                 std::string type = demangle(typeid(e).name());
-                std::string origin =
-                    origin_of(dynamic_cast<const FailureOrigin*>(&e), type);
+                std::string origin;
+                if (concurrent_exception_origin.has_value()) {
+                    origin = std::move(*concurrent_exception_origin);
+                    concurrent_exception_origin.reset();
+                } else {
+                    origin =
+                        origin_of(dynamic_cast<const FailureOrigin*>(&e), type);
+                }
                 return {HEGEL_STATUS_INTERESTING, origin, type, e.what(),
                         std::current_exception()};
             } catch (...) {
@@ -253,7 +299,13 @@ namespace hegel {
                         abi::__cxa_current_exception_type()) {
                     type = demangle(tinfo->name());
                 }
-                std::string origin = origin_of(nullptr, type);
+                std::string origin;
+                if (concurrent_exception_origin.has_value()) {
+                    origin = std::move(*concurrent_exception_origin);
+                    concurrent_exception_origin.reset();
+                } else {
+                    origin = origin_of(nullptr, type);
+                }
                 std::exception_ptr exception = std::current_exception();
                 if (exception == nullptr) {
                     // GCOVR_EXCL_START
@@ -335,14 +387,10 @@ namespace hegel {
             if (printed_output) {
                 std::fprintf(stderr, "\n");
             }
-            if (outcome.message.empty()) {
-                std::fprintf(stderr, "Exception: %s\n",
-                             outcome.type_name.c_str());
-            } else {
-                std::fprintf(stderr, "Exception: %s: %s\n",
-                             outcome.type_name.c_str(),
-                             outcome.message.c_str());
-            }
+            std::fprintf(stderr, "Exception: %s%s\n", outcome.type_name.c_str(),
+                         outcome.message.empty()
+                             ? ""
+                             : (": " + outcome.message).c_str());
             if (!settings.print_blob) {
                 return;
             }
@@ -541,6 +589,7 @@ namespace hegel {
             uint64_t cases_run = 0;
             uint64_t cases_discarded = 0;
             bool seen_interesting = false;
+            std::optional<NondeterministicFailure> nondeterministic_failure;
 
             // Generation loop: pull cases until the engine reports completion
             // (NULL test case), running, marking, and releasing each.
@@ -549,10 +598,19 @@ namespace hegel {
                 if (handle == nullptr) {
                     break;
                 }
-                TestCase tc_obj(std::unique_ptr<impl::test_case::TestCaseData>(
+                bool nondeterministic =
+                    impl::test_case_is_nondeterministic(ctx, handle);
+                auto data = std::unique_ptr<impl::test_case::TestCaseData>(
                     new impl::test_case::TestCaseData{
-                        handle, /*is_final=*/false, settings.verbosity}));
+                        handle, /*is_final=*/false, settings.verbosity});
+                data->buffer_output = nondeterministic;
+                TestCase tc_obj(std::move(data));
                 BodyOutcome outcome = run_body(test_fn, tc_obj);
+                if (nondeterministic &&
+                    outcome.status == HEGEL_STATUS_INTERESTING) {
+                    nondeterministic_failure = NondeterministicFailure{
+                        outcome, *tc_obj.data()->output_lines};
+                }
                 if (!seen_interesting) {
                     if (outcome.status == HEGEL_STATUS_INTERESTING) {
                         cases_run++;
@@ -583,10 +641,42 @@ namespace hegel {
                 throw std::runtime_error(std::string("Hegel run error: ") +
                                          (run_err ? run_err : "unknown error"));
             }
+
+            bool quiet = settings.verbosity == Verbosity::Quiet;
+
+            if (run_status == HEGEL_RUN_STATUS_FAILED_NONDETERMINISTIC) {
+                if (!nondeterministic_failure.has_value()) {
+                    // GCOVR_EXCL_START
+                    throw std::runtime_error(
+                        "internal error: nondeterministic failure was not "
+                        "captured");
+                    // GCOVR_EXCL_STOP
+                }
+
+                if (!quiet) {
+                    print_failure_header(location, cases_run, cases_discarded);
+                    std::vector<std::string> lines = group_concurrent_output(
+                        nondeterministic_failure->lines);
+                    for (const std::string& line : lines) {
+                        std::fprintf(stderr, "%s\n", line.c_str());
+                    }
+                    const BodyOutcome& outcome =
+                        nondeterministic_failure->outcome;
+                    if (!lines.empty()) {
+                        std::fprintf(stderr, "\n");
+                    }
+                    std::fprintf(stderr, "Exception: %s%s\n",
+                                 outcome.type_name.c_str(),
+                                 outcome.message.empty()
+                                     ? ""
+                                     : (": " + outcome.message).c_str());
+                }
+                std::rethrow_exception(
+                    nondeterministic_failure->outcome.exception);
+            }
             // Failed: one framed report, holding one section per distinct
             // counterexample.
             size_t failure_count = impl::run_result_failure_count(ctx, result);
-            bool quiet = settings.verbosity == Verbosity::Quiet;
             if (!quiet) {
                 print_failure_header(location, cases_run, cases_discarded);
             }
@@ -631,6 +721,30 @@ namespace hegel {
         bool install_framework_hooks(const FrameworkHooks& hooks) {
             framework_hooks() = hooks;
             return true;
+        }
+
+        CapturedException capture_current_exception() {
+            std::exception_ptr exception = std::current_exception();
+            try {
+                throw;
+            } catch (const std::exception& error) {
+                std::string type = demangle(typeid(error).name());
+                return {exception,
+                        origin_of(dynamic_cast<const FailureOrigin*>(&error),
+                                  type)};
+            } catch (...) {
+                std::string type = "unknown_exception";
+                if (const std::type_info* info =
+                        abi::__cxa_current_exception_type()) {
+                    type = demangle(info->name());
+                }
+                return {exception, origin_of(nullptr, type)};
+            }
+        }
+
+        [[noreturn]] void CapturedException::rethrow() const {
+            concurrent_exception_origin = origin;
+            std::rethrow_exception(exception);
         }
 
         bool register_blob(const char* name, std::vector<const char*> blobs) {
