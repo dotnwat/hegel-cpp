@@ -54,6 +54,9 @@ TEST(Output, FailingScenariosExitNonZero) {
 // the binary loads at a different address. A throw site holds an offset from
 // its enclosing function, so it survives ASLR and repeats run to run.
 TEST(Output, ThrowSitesGroupTheSameWayInEveryProcess) {
+#ifdef HEGEL_TESTS_NO_THROW_SITE
+    GTEST_SKIP() << "HEGEL_THROW_SITE=OFF compiles throw-site capture out";
+#endif
     for (int run = 0; run < 3; run++) {
         SubprocessResult r = run_scenario("throw_sites");
         EXPECT_NE(r.exit_code, 0);
@@ -201,6 +204,9 @@ namespace {
 // Two `throw`s of one type are two bugs. The site each was thrown from is
 // part of its origin, so the two shrink separately and the run reports both.
 TEST(FailureReport, ThrowSitesAreDistinctBugs) {
+#ifdef HEGEL_TESTS_NO_THROW_SITE
+    GTEST_SKIP() << "HEGEL_THROW_SITE=OFF compiles throw-site capture out";
+#endif
     std::string out = capture_failure_report(
         [](hegel::TestCase& tc) {
             int32_t x = tc.draw(gs::integers<int32_t>());

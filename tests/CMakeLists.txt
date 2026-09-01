@@ -155,6 +155,13 @@ if(HEGEL_APPROVAL_TESTS)
         PRIVATE
             HEGEL_SUBJECT_BIN="$<TARGET_FILE:subject>"
     )
+    if(NOT HEGEL_THROW_SITE)
+        # The tests that need two throw sites to be two bugs skip themselves
+        # under this macro: without the __cxa_throw wrapper, one exception
+        # type is one origin.
+        target_compile_definitions(test_printing
+            PRIVATE HEGEL_TESTS_NO_THROW_SITE)
+    endif()
     gtest_discover_tests(test_printing)
 endif()
 
