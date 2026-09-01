@@ -7,13 +7,22 @@
 #include <hegel.h>
 #include <hegel/settings.h>
 
+#include <chrono>
 #include <cstddef>
 #include <map>
 #include <memory>
+#include <mutex>
+#include <optional>
 #include <set>
 #include <string>
+#include <vector>
 
 namespace hegel::impl::test_case {
+
+    struct WorkerOutputLine {
+        std::optional<std::size_t> worker;
+        std::string text;
+    };
 
     // Per-case runtime state.
     // Generators reach `tc` through TestCase::data() to drive the typed draw
@@ -29,6 +38,13 @@ namespace hegel::impl::test_case {
         // Whether any note or drawn value has printed. Shared with clones,
         // which print into the same body.
         std::shared_ptr<bool> printed_output = std::make_shared<bool>(false);
+        std::shared_ptr<std::mutex> output_mutex =
+            std::make_shared<std::mutex>();
+        std::optional<std::size_t> worker_index;
+        std::chrono::steady_clock::time_point worker_started;
+        bool buffer_output = false;
+        std::shared_ptr<std::vector<WorkerOutputLine>> output_lines =
+            std::make_shared<std::vector<WorkerOutputLine>>();
         int draw_depth = 0;
         std::map<std::string, int> draw_name_counts;
         std::set<std::string> taken_display_names;
@@ -51,7 +67,7 @@ namespace hegel::impl::test_case {
             case Verbosity::Quiet:
                 return false;
             case Verbosity::Normal:
-                return is_final;
+                return is_final || buffer_output;
             case Verbosity::Verbose:
             case Verbosity::Debug:
                 return true;

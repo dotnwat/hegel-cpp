@@ -528,7 +528,7 @@ TEST(ConcurrentStateful, FixedSingleWorkerFailureRemainsDeterministic) {
                      },
                      hegel::Settings{.print_blob = true,
                                      .database = hegel::Database::disabled()}),
-        std::runtime_error);
+                 std::runtime_error);
     std::string output = testing::internal::GetCapturedStderr();
     Approvals::verify(output, scrub_concurrent_report());
 }

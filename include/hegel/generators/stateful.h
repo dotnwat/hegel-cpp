@@ -1,11 +1,17 @@
 #pragma once
 
+#include <condition_variable>
 #include <cstddef>
 #include <cstdint>
+#include <exception>
 #include <functional>
 #include <map>
+#include <memory>
+#include <mutex>
+#include <optional>
 #include <stdexcept>
 #include <string>
+#include <thread>
 #include <type_traits>
 #include <utility>
 #include <vector>
@@ -62,6 +68,52 @@ namespace hegel::stateful {
     using hegel::generators::IGenerator;
 
     template <typename T> class VariablesGenerator;
+
+    inline constexpr const char* anonymous_group = "<anonymous>";
+
+    template <typename M> class ConcurrentRule {
+      public:
+        using Function = std::function<void(TestCase&, M&)>;
+
+        ConcurrentRule(std::string name, Function function)
+            : ConcurrentRule(std::move(name), anonymous_group,
+                             std::move(function)) {}
+
+        ConcurrentRule(std::string name, std::string group, Function function)
+            : name_(std::move(name)), group_(std::move(group)),
+              function_(std::move(function)) {}
+
+        const std::string& name() const { return name_; }
+        const std::string& group() const { return group_; }
+        const Function& function() const { return function_; }
+
+      private:
+        std::string name_;
+        std::string group_;
+        Function function_;
+    };
+
+    template <typename M> class ConcurrentInvariant {
+      public:
+        using Function = std::function<void(const M&)>;
+
+        ConcurrentInvariant(std::string name, Function function)
+            : name_(std::move(name)), function_(std::move(function)) {}
+
+        const std::string& name() const { return name_; }
+        const Function& function() const { return function_; }
+
+      private:
+        std::string name_;
+        Function function_;
+    };
+
+    template <typename Derived> class ConcurrentStateMachine {
+      public:
+        std::vector<ConcurrentInvariant<Derived>> invariants() const {
+            return {};
+        }
+    };
 
     /**
      * @brief A pool of previously generated values.  A pool lets data flow from
@@ -480,6 +532,262 @@ namespace hegel::stateful {
             }
         }
     }
+
+    template <typename M>
+    void run_concurrent(M& machine, TestCase& tc, int64_t min_concurrency,
+                        int64_t max_concurrency) {
+        static_assert(std::is_base_of<ConcurrentStateMachine<M>, M>::value,
+                      "run_concurrent() requires a machine deriving from "
+                      "ConcurrentStateMachine<M>.");
+        if (min_concurrency < 1 || min_concurrency > max_concurrency) {
+            throw std::invalid_argument(
+                "concurrency bounds must satisfy 1 <= min <= max");
+        }
+
+        std::vector<ConcurrentRule<M>> rules = machine.rules();
+        std::vector<ConcurrentInvariant<M>> invariants = machine.invariants();
+        if (rules.empty()) {
+            throw std::invalid_argument(
+                "Cannot run a concurrent state machine with no rules.");
+        }
+
+        std::vector<std::string> rule_names;
+        std::vector<std::string> invariant_names;
+        std::vector<std::string> group_names;     // maps group ID to name
+        std::map<std::string, int64_t> group_ids; // maps group name to ID
+        std::vector<int64_t>
+            rule_groups; // ID of group that rule_names[i] belongs to is the ID
+                         // at rule_groups[i].
+        rule_names.reserve(rules.size());
+        rule_groups.reserve(rules.size());
+        for (const ConcurrentRule<M>& rule : rules) {
+            rule_names.push_back(rule.name());
+            auto [group, inserted] = group_ids.emplace(
+                rule.group(), static_cast<int64_t>(group_ids.size()));
+            if (inserted) {
+                group_names.push_back(rule.group());
+            }
+            rule_groups.push_back(group->second);
+        }
+        invariant_names.reserve(invariants.size());
+        for (const ConcurrentInvariant<M>& invariant : invariants) {
+            invariant_names.push_back(invariant.name());
+        }
+
+        internal::StateMachineHandle machine_handle(
+            tc, rule_names, rule_groups, invariant_names, min_concurrency,
+            max_concurrency);
+        tc.note("Concurrency level: " +
+                std::to_string(machine_handle.concurrency()));
+        tc.note("Initial invariant check.");
+        for (const ConcurrentInvariant<M>& invariant : invariants) {
+            invariant.function()(machine);
+        }
+
+        enum class EventKind { RoundDone, Invalid, Overrun, Control, Panicked };
+        struct Event {
+            EventKind kind = EventKind::RoundDone;
+            std::optional<internal::CapturedException> exception;
+        };
+        struct RoundState {
+            std::mutex mutex;
+            std::condition_variable start;
+            std::condition_variable done;
+            uint64_t round_number = 0;
+            bool stop = false;
+            std::size_t num_workers_completed = 0;
+            std::vector<Event> events;
+        };
+
+        auto classify = []() {
+            Event event;
+            event.exception = internal::capture_current_exception();
+            try {
+                std::rethrow_exception(event.exception->exception);
+            } catch (const internal::HegelStopTest&) {
+                event.kind = EventKind::Overrun;
+            } catch (const internal::HegelReject&) {
+                event.kind = EventKind::Invalid;
+            } catch (const std::invalid_argument&) {
+                event.kind = EventKind::Control;
+            } catch (...) {
+                event.kind = EventKind::Panicked;
+            }
+            return event;
+        };
+
+        auto run_round = [&](std::size_t worker, TestCase& worker_tc) {
+            while (true) {
+                int64_t rule_index;
+                try {
+                    rule_index = machine_handle.next_rule(
+                        worker_tc, static_cast<int64_t>(worker));
+                } catch (...) {
+                    return classify();
+                }
+                if (rule_index == internal::state_machine_done) {
+                    return Event{};
+                }
+                if (rule_index < 0 ||
+                    static_cast<std::size_t>(rule_index) >= rules.size()) {
+                    try {
+                        throw std::runtime_error(
+                            "state_machine_next_rule returned out-of-range "
+                            "rule index. Please report this as a bug.");
+                    } catch (...) {
+                        return classify();
+                    }
+                }
+
+                const ConcurrentRule<M>& rule =
+                    rules[static_cast<std::size_t>(rule_index)];
+                worker_tc.note("Rule: " + rule.name());
+                try {
+                    internal::NoteIndentScope indent(worker_tc);
+                    rule.function()(worker_tc, machine);
+                } catch (const internal::HegelReject&) {
+                    try {
+                        machine_handle.rule_rejected(
+                            worker_tc, static_cast<int64_t>(worker));
+                    } catch (...) {
+                        return classify();
+                    }
+                    worker_tc.note(
+                        "Rule stopped early due to violated assumption.");
+                } catch (...) {
+                    return classify();
+                }
+            }
+        };
+
+        std::size_t worker_count =
+            static_cast<std::size_t>(machine_handle.concurrency());
+        RoundState state;
+        state.events.resize(worker_count);
+        std::vector<std::thread> workers;
+        workers.reserve(worker_count);
+        for (std::size_t worker = 0; worker < worker_count; ++worker) {
+            TestCase worker_tc = tc.clone();
+            internal::set_concurrent_worker(worker_tc, worker);
+            workers.emplace_back(
+                [&, worker, worker_tc = std::move(worker_tc)]() mutable {
+                    uint64_t observed_round_number = 0;
+                    while (true) {
+                        {
+                            std::unique_lock<std::mutex> lock(state.mutex);
+                            state.start.wait(lock, [&] {
+                                return state.stop ||
+                                       state.round_number !=
+                                           observed_round_number; // main thread
+                                                                  // started a
+                                                                  // new round
+                            });
+                            if (state.stop) {
+                                return;
+                            }
+                            observed_round_number = state.round_number;
+                        }
+                        Event event = run_round(worker, worker_tc);
+                        {
+                            std::lock_guard<std::mutex> lock(state.mutex);
+                            state.events[worker] = std::move(event);
+                            ++state.num_workers_completed;
+                        }
+                        state.done.notify_one();
+                    }
+                });
+        }
+
+        auto stop_workers = [&] {
+            {
+                std::lock_guard<std::mutex> lock(state.mutex);
+                state.stop = true;
+            }
+            state.start.notify_all();
+            for (std::thread& worker : workers) {
+                worker.join();
+            }
+        };
+
+        try {
+            while (true) {
+                int64_t group = machine_handle.next_group(tc);
+                if (group == internal::state_machine_done) {
+                    break;
+                }
+                if (group < 0 ||
+                    static_cast<std::size_t>(group) >= group_names.size()) {
+                    throw std::runtime_error(
+                        "state_machine_next_group returned an unknown group "
+                        "index. Please report this as a bug.");
+                }
+                {
+                    std::lock_guard<std::mutex> lock(state.mutex);
+                    state.num_workers_completed = 0;
+                    ++state.round_number;
+                    tc.note("---------------- Round " +
+                            std::to_string(state.round_number) + ": group \"" +
+                            group_names[static_cast<std::size_t>(group)] +
+                            "\" ----------------");
+                }
+                state.start.notify_all();
+                {
+                    std::unique_lock<std::mutex> lock(state.mutex);
+                    state.done.wait(lock, [&] {
+                        return state.num_workers_completed == worker_count;
+                    });
+                }
+
+                std::optional<std::size_t> control;
+                bool saw_overrun = false;
+                bool saw_invalid = false;
+                std::optional<std::size_t> panic;
+                // need to collect every event because the precedence is
+                // control > overrun > invalid > panic > round complete
+                for (std::size_t worker = 0; worker < worker_count; ++worker) {
+                    switch (state.events[worker].kind) {
+                    case EventKind::RoundDone:
+                        break;
+                    case EventKind::Invalid:
+                        saw_invalid = true;
+                        break;
+                    case EventKind::Overrun:
+                        saw_overrun = true;
+                        break;
+                    case EventKind::Control: // e.g. invalid use of API
+                        if (!control.has_value()) {
+                            control = worker;
+                        }
+                        break;
+                    case EventKind::Panicked:
+                        if (!panic.has_value()) {
+                            panic = worker;
+                        }
+                        break;
+                    }
+                }
+                if (control.has_value()) {
+                    state.events[*control].exception->rethrow();
+                }
+                if (saw_overrun) {
+                    throw internal::HegelStopTest();
+                }
+                if (saw_invalid) {
+                    throw internal::HegelReject();
+                }
+                if (panic.has_value()) {
+                    state.events[*panic].exception->rethrow();
+                }
+                for (const ConcurrentInvariant<M>& invariant : invariants) {
+                    invariant.function()(machine);
+                }
+            }
+        } catch (...) {
+            stop_workers();
+            throw;
+        }
+        stop_workers();
+    }
     /// @endcond
 
     /**
@@ -529,16 +837,16 @@ namespace hegel::stateful {
         print_state(tc, machine, params);
         check_invariants(tc, "in the initial state", machine, invariants);
 
-        internal::StateMachineHandle machine_handle(tc, rule_names,
-                                                    invariant_names);
+        std::vector<int64_t> rule_groups(rule_names.size(), 0);
+        internal::StateMachineHandle machine_handle(tc, rule_names, rule_groups,
+                                                    invariant_names, 1, 1);
         int64_t steps_run = 0;
 
-        // The engine drives execution in rounds: it decides at each join point
-        // whether another round runs, then a round's rule stream is pulled
-        // until it is exhausted. A sequential machine runs one rule per round.
+        // Sequential stateful testing is modeled as a concurrent stateful test
+        // with one group and one worker.
         while (machine_handle.next_group(tc) != internal::state_machine_done) {
             while (true) {
-                int64_t next_rule_idx = machine_handle.next_rule(tc);
+                int64_t next_rule_idx = machine_handle.next_rule(tc, 0);
                 if (next_rule_idx == internal::state_machine_done) {
                     break;
                 }
@@ -569,7 +877,7 @@ namespace hegel::stateful {
                     internal::stop_span(tc);
                 } catch (const internal::HegelReject&) {
                     tc.note("Rule stopped early due to violated assumption.");
-                    machine_handle.rule_rejected(tc);
+                    machine_handle.rule_rejected(tc, 0);
                     internal::stop_span(tc, true);
                 } catch (...) {
                     internal::stop_span(tc);

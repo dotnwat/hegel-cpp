@@ -173,6 +173,14 @@ namespace hegel::impl {
         return clone;
     }
 
+    bool test_case_is_nondeterministic(hegel_context_t* ctx,
+                                       const hegel_test_case_t* tc) {
+        bool nondeterministic = false;
+        check_rc(ctx, hegel_test_case_is_nondeterministic(ctx, tc,
+                                                          &nondeterministic));
+        return nondeterministic;
+    }
+
     void mark_complete(hegel_context_t* ctx, hegel_test_case_t* tc,
                        hegel_status_t status, const char* origin) {
         check_rc(ctx, hegel_mark_complete(ctx, tc, status, origin));
@@ -680,7 +688,9 @@ namespace hegel::internal {
 
     StateMachineHandle::StateMachineHandle(
         const TestCase& tc, const std::vector<std::string>& rule_names,
-        const std::vector<std::string>& invariant_names) {
+        const std::vector<int64_t>& rule_groups,
+        const std::vector<std::string>& invariant_names,
+        int64_t min_concurrency, int64_t max_concurrency) {
         impl::DrawScope scope(tc);
 
         auto to_cstrings = [](const std::vector<std::string>& names) {
@@ -695,18 +705,12 @@ namespace hegel::internal {
         std::vector<char*> invariant_name_cstrings =
             to_cstrings(invariant_names);
 
-        // The frontend runs rules sequentially: every rule shares one
-        // concurrency group (id 0) and the concurrency level is fixed at 1,
-        // so no entropy is drawn for it and out_concurrency is ignored.
-        std::vector<int64_t> rule_groups(rule_names.size(), 0);
-        int64_t concurrency = 0;
         scope.raise_for_rc(hegel_new_state_machine(
                                scope.ctx, scope.tc, rule_name_cstrings.data(),
                                rule_groups.data(), rule_names.size(),
                                invariant_name_cstrings.data(),
-                               invariant_names.size(),
-                               /*min_concurrency=*/1, /*max_concurrency=*/1,
-                               &handle_, &concurrency),
+                               invariant_names.size(), min_concurrency,
+                               max_concurrency, &handle_, &concurrency_),
                            "hegel_new_state_machine");
     }
 
@@ -724,25 +728,24 @@ namespace hegel::internal {
         return group_id;
     }
 
-    int64_t StateMachineHandle::next_rule(const TestCase& tc) {
+    int64_t StateMachineHandle::next_rule(const TestCase& tc,
+                                          int64_t worker_index) {
         impl::DrawScope scope(tc);
         int64_t rule_idx;
 
-        // Sequential frontend: a single worker, index 0.
-        scope.raise_for_rc(
-            hegel_state_machine_next_rule(scope.ctx, scope.tc, handle_,
-                                          /*worker_index=*/0, &rule_idx),
-            "hegel_state_machine_next_rule");
+        scope.raise_for_rc(hegel_state_machine_next_rule(scope.ctx, scope.tc,
+                                                         handle_, worker_index,
+                                                         &rule_idx),
+                           "hegel_state_machine_next_rule");
         return rule_idx;
     }
 
-    void StateMachineHandle::rule_rejected(const TestCase& tc) {
+    void StateMachineHandle::rule_rejected(const TestCase& tc,
+                                           int64_t worker_index) {
         impl::DrawScope scope(tc);
-        // Sequential frontend: a single worker, index 0.
-        scope.raise_for_rc(
-            hegel_state_machine_rule_rejected(scope.ctx, scope.tc, handle_,
-                                              /*worker_index=*/0),
-            "hegel_state_machine_rule_rejected");
+        scope.raise_for_rc(hegel_state_machine_rule_rejected(
+                               scope.ctx, scope.tc, handle_, worker_index),
+                           "hegel_state_machine_rule_rejected");
     }
 
 } // namespace hegel::internal

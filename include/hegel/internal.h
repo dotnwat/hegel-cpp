@@ -107,7 +107,9 @@ namespace hegel::internal {
       public:
         StateMachineHandle(const TestCase& tc,
                            const std::vector<std::string>& rule_names,
-                           const std::vector<std::string>& invariant_names);
+                           const std::vector<int64_t>& rule_groups,
+                           const std::vector<std::string>& invariant_names,
+                           int64_t min_concurrency, int64_t max_concurrency);
         ~StateMachineHandle();
         StateMachineHandle(const StateMachineHandle&) = delete;
         StateMachineHandle& operator=(const StateMachineHandle&) = delete;
@@ -118,14 +120,28 @@ namespace hegel::internal {
         int64_t next_group(const TestCase& tc);
         // Returns the index of the next rule to run this round, or
         // state_machine_done once the round's rule stream is exhausted.
-        int64_t next_rule(const TestCase& tc);
+        int64_t next_rule(const TestCase& tc, int64_t worker_index);
         // Report that an assumption failed in the last rule, so it does not
         // count against the step budget.
-        void rule_rejected(const TestCase& tc);
+        void rule_rejected(const TestCase& tc, int64_t worker_index);
+
+        int64_t concurrency() const { return concurrency_; }
 
       private:
         hegel_state_machine_t* handle_ = nullptr;
+        int64_t concurrency_ = 0;
     };
+
+    void set_concurrent_worker(TestCase& tc, std::size_t worker_index);
+
+    struct CapturedException {
+        std::exception_ptr exception;
+        std::string origin;
+
+        [[noreturn]] void rethrow() const;
+    };
+
+    CapturedException capture_current_exception();
 
     class NoteIndentScope {
       public:
