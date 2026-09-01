@@ -69,26 +69,64 @@ namespace hegel::stateful {
     using hegel::generators::IGenerator;
 
     template <typename T> class VariablesGenerator;
-    template <typename T> class ConcurrentPool;
-    template <typename T> class ConcurrentVariablesGenerator;
     template <typename T> class Invariant;
 
+    /// The group name for rules that do not specify a group.
     inline constexpr const char* anonymous_group = "<anonymous>";
 
+    /**
+     * @brief An action that a worker can apply to a concurrent state machine.
+     *
+     * Rules in the same group can run concurrently. Rules in different groups
+     * cannot. A rule that does not specify a group uses @ref anonymous_group.
+     *
+     * @tparam M The state-machine type that the rule acts on
+     */
     template <typename M> class ConcurrentRule {
       public:
+        /// The type of the function that applies the rule.
         using Function = std::function<void(TestCase&, M&)>;
 
+        /**
+         * @brief Creates a rule in @ref anonymous_group.
+         *
+         * @param name The name of the rule
+         * @param function The function that applies the rule
+         */
         ConcurrentRule(std::string name, Function function)
             : ConcurrentRule(std::move(name), anonymous_group,
                              std::move(function)) {}
 
+        /**
+         * @brief Creates a rule in the specified group.
+         *
+         * @param name The name of the rule
+         * @param group The concurrency group of the rule
+         * @param function The function that applies the rule
+         */
         ConcurrentRule(std::string name, std::string group, Function function)
             : name_(std::move(name)), group_(std::move(group)),
               function_(std::move(function)) {}
 
+        /**
+         * @brief Returns the name of the rule.
+         *
+         * @return The name of the rule
+         */
         const std::string& name() const { return name_; }
+
+        /**
+         * @brief Returns the concurrency group of the rule.
+         *
+         * @return The concurrency group of the rule
+         */
         const std::string& group() const { return group_; }
+
+        /**
+         * @brief Returns the function that applies the rule.
+         *
+         * @return The function that applies the rule
+         */
         const Function& function() const { return function_; }
 
       private:
@@ -97,8 +135,71 @@ namespace hegel::stateful {
         Function function_;
     };
 
+    /**
+     * @brief Base class for a concurrent state machine.
+     *
+     * Derive a machine from this class. Define a @c rules() member that returns
+     * the rules for the machine. Override @ref invariants to add invariant
+     * checks.
+     *
+     * The example below defines three groups. The @c alpha and @c beta rules
+     * can run concurrently because both use the @c letters group. The @c one
+     * rule
+     * uses the @c numbers group and does not overlap with them. The @c
+     * anonymous
+     * rule uses @ref anonymous_group and does not overlap with either named
+     * group.
+     *
+     * @code{.cpp}
+        struct MyConcurrent
+            : hegel::stateful::ConcurrentStateMachine<GroupedMachine> {
+            std::mutex mutex;
+            std::vector<std::string> log;
+
+            std::vector<hegel::stateful::ConcurrentRule<GroupedMachine>>
+            rules() {
+                return {
+                    {"alpha", "letters",
+                     [](hegel::TestCase&, GroupedMachine& m) {
+                         std::lock_guard<std::mutex> lock(m.mutex);
+                         m.log.push_back("alpha");
+                     }},
+                    {"beta", "letters",
+                     [](hegel::TestCase&, GroupedMachine& m) {
+                         std::lock_guard<std::mutex> lock(m.mutex);
+                         m.log.push_back("beta");
+                     }},
+                    {"one", "numbers",
+                     [](hegel::TestCase&, GroupedMachine& m) {
+                         std::lock_guard<std::mutex> lock(m.mutex);
+                         m.log.push_back("one");
+                     }},
+                    {"anonymous", [](hegel::TestCase&, GroupedMachine& m) {
+                         std::lock_guard<std::mutex> lock(m.mutex);
+                         m.log.push_back("anonymous");
+                     }},
+                };
+            }
+        };
+
+        HEGEL_TEST(grouped_machine)(hegel::TestCase& tc) {
+            GroupedMachine machine;
+            hegel::stateful::run_concurrent(machine, tc, 1, 3);
+        }
+     * @endcode
+     *
+     * @tparam Derived The deriving state-machine type
+     */
     template <typename Derived> class ConcurrentStateMachine {
       public:
+        /**
+         * @brief Returns the invariants of the machine.
+         *
+         * Override this member to add invariants. There are no invariants by
+         * default.
+         *
+         * @return The invariants of the machine
+         */
         std::vector<Invariant<Derived>> invariants() const { return {}; }
     };
 
@@ -313,21 +414,62 @@ namespace hegel::stateful {
         return Generator<T>(new VariablesGenerator<T>(p, false));
     }
 
+    /// @cond INTERNAL
+    template <typename T> class ConcurrentVariablesGenerator;
+    /// @endcond
+
+    /**
+     * @brief A pool of values that concurrent workers can share.
+     *
+     * Store the pool in a concurrent state machine. Use @ref add to add a
+     * value from a worker, @ref values_reusable to draw a copy without
+     * removal, and @ref values_consumed to draw and remove a value.
+     *
+     * libhegel selects a value and updates the pool as an atomic operation.
+     * A draw rejects the test case if the pool is empty.
+     *
+     * A @ref ConcurrentPool is not copyable.
+     *
+     * @tparam T The type of the values in the pool
+     */
     template <typename T> class ConcurrentPool {
       public:
+        /**
+         * @brief Creates an empty pool.
+         *
+         * @param tc The test case
+         */
         explicit ConcurrentPool(const TestCase& tc) : pool_handle_(tc) {}
 
+        /**
+         * @brief Adds a value to the pool.
+         *
+         * Call with the test case of the current worker.
+         *
+         * @param tc The test case of the current worker
+         * @param value The value to add
+         */
         void add(const TestCase& tc, T value) {
             std::lock_guard<std::mutex> lock(mutex_);
             int64_t variable = pool_handle_.add(tc);
             values_.emplace(variable, std::move(value));
         }
 
+        /**
+         * @brief Returns true if the pool contains no values.
+         *
+         * @return True if the pool contains no values
+         */
         bool empty() const {
             std::lock_guard<std::mutex> lock(mutex_);
             return values_.empty();
         }
 
+        /**
+         * @brief Returns the number of values in the pool.
+         *
+         * @return The number of values in the pool
+         */
         std::size_t size() const {
             std::lock_guard<std::mutex> lock(mutex_);
             return values_.size();
@@ -344,6 +486,7 @@ namespace hegel::stateful {
         friend class ConcurrentVariablesGenerator<T>;
     };
 
+    /// @cond INTERNAL
     template <typename T>
     class ConcurrentVariablesGenerator : public IGenerator<T> {
       public:
@@ -366,12 +509,32 @@ namespace hegel::stateful {
         ConcurrentPool<T>& pool_;
         bool consume_;
     };
+    /// @endcond
 
+    /**
+     * @brief Returns a value from a concurrent pool and removes it.
+     *
+     * The draw rejects the test case if the pool is empty.
+     *
+     * @tparam T The type of the values in the pool
+     * @param pool The pool to draw from
+     * @return A generator that consumes values from the pool
+     */
     template <typename T>
     Generator<T> values_consumed(ConcurrentPool<T>& pool) {
         return Generator<T>(new ConcurrentVariablesGenerator<T>(pool, true));
     }
 
+    /**
+     * @brief Returns a copy of a value from a concurrent pool.
+     *
+     * The draw does not remove the value. It rejects the test case if the pool
+     * is empty.
+     *
+     * @tparam T The type of the values in the pool
+     * @param pool The pool to draw from
+     * @return A generator that reuses values from the pool
+     */
     template <typename T>
     Generator<T> values_reusable(ConcurrentPool<T>& pool) {
         return Generator<T>(new ConcurrentVariablesGenerator<T>(pool, false));
@@ -591,7 +754,36 @@ namespace hegel::stateful {
             }
         }
     }
+    /// @endcond
 
+    /**
+     * @brief Executes a concurrent stateful test with rules from @p machine.
+     *
+     * The runner selects a concurrency level from @p min_concurrency through
+     * @p max_concurrency. Execution proceeds in rounds. For each round,
+     * libhegel picks a random concurrency group. Every worker thread then runs
+     * a short (possibly empty) random sequence of rules from only that group
+     * concurrently with the other workers. The runner waits for all workers to
+     * finish before it starts the next round.
+     *
+     * All invariants run before the first round and after the final round.
+     * Between rounds, the runner samples each invariant independently.
+     *
+     * Raises @c std::invalid_argument if the machine declares no rules or if
+     * the concurrency bounds are invalid.
+     *
+     * On a failing replay, the output shows the concurrency level, each round,
+     * the active group, and the rules that each worker applies, but the
+     * falsifying test case is not shrunk since the failure may be dependent on
+     * thread scheduling.
+     *
+     * @tparam M The state-machine type, deriving from
+     * @ref ConcurrentStateMachine
+     * @param machine The state machine that the workers share
+     * @param tc The test case object
+     * @param min_concurrency The minimum number of workers
+     * @param max_concurrency The maximum number of workers
+     */
     template <typename M>
     void run_concurrent(M& machine, TestCase& tc, int64_t min_concurrency,
                         int64_t max_concurrency) {
@@ -847,7 +1039,6 @@ namespace hegel::stateful {
         }
         stop_workers();
     }
-    /// @endcond
 
     /**
      * @brief Executes a stateful test by repeatedly applying randomly chosen
